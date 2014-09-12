@@ -1,10 +1,5 @@
 language: go
 
-go:
-    - 1.1
-    - 1.2
-    - tip
-
 matrix:
     include:
         - go: 1.1
