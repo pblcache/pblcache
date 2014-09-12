@@ -83,9 +83,9 @@ func TestConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	a := NewAddressMap()
-	for i := 0; i < 500; i++ {
+	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		go concurrentTester(t, a, &wg, 500)
+		go concurrentTester(t, a, &wg, 1000)
 	}
 
 	wg.Wait()
