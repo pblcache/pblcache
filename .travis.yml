@@ -6,13 +6,13 @@ go:
     - tip
 
 matrix:
-	include:
-		- go: 1.1
-		  env: OPTIONS="-race -cpu 2"
-		- go: 1.2
-		  env: OPTIONS="-cpu 2"
-		- go: tip
-		  env: OPTIONS="-race -cpu 2"
+    include:
+        - go: 1.1
+          env: OPTIONS="-race -cpu 2"
+        - go: 1.2
+          env: OPTIONS="-cpu 2"
+        - go: tip
+          env: OPTIONS="-race -cpu 2"
 
 script:
     - go test $OPTIONS ./...
