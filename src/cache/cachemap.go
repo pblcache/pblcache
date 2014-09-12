@@ -16,6 +16,7 @@
 
 package cache
 
+/*
 import (
 	"fmt"
 	"github.com/lpabon/bufferio"
@@ -187,3 +188,4 @@ func (c *IoCacheKvDB) Stats() *CacheStats {
 func (c *IoCacheKvDB) StatsClear() {
 	c.stats = NewCacheStats()
 }
+*/

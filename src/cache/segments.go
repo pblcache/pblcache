@@ -16,6 +16,7 @@
 
 package cache
 
+/*
 import (
 	"flag"
 	"fmt"
@@ -438,3 +439,5 @@ func (c *KVIoDB) String() string {
 		"== IoDB Information ==\n") +
 		c.stats.String()
 }
+
+*/

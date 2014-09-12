@@ -39,6 +39,16 @@ func NewAddressMap() *AddressMap {
 
 }
 
+func (a *AddressMap) SetAddressMapKey(key AddressMapKey, index uint64) {
+	a.Set(key.objid, key.lba, index)
+}
+func (a *AddressMap) GetAddressMapKey(key AddressMapKey) (uint64, bool) {
+	return a.Get(key.objid, key.lba)
+}
+func (a *AddressMap) DeleteAddressMapKey(key AddressMapKey) {
+	a.Delete(key.objid, key.lba)
+}
+
 func (a *AddressMap) Set(objid, lba uint64, index uint64) {
 	a.rwlock.Lock()
 	defer a.rwlock.Unlock()

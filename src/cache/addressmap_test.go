@@ -72,6 +72,12 @@ func TestSet(t *testing.T) {
 	assert(t, a.addressmap[AddressMapKey{1, 2}] == 3)
 }
 
+func TestSetAddressMapKey(t *testing.T) {
+	a := NewAddressMap()
+	a.SetAddressMapKey(AddressMapKey{1, 2}, 3)
+	assert(t, a.addressmap[AddressMapKey{1, 2}] == 3)
+}
+
 func TestGet(t *testing.T) {
 	a := NewAddressMap()
 	a.Set(1, 2, 3)
@@ -84,6 +90,18 @@ func TestGet(t *testing.T) {
 	assert(t, ok == false)
 }
 
+func TestGetAddressMapKey(t *testing.T) {
+	a := NewAddressMap()
+	a.SetAddressMapKey(AddressMapKey{1, 2}, 3)
+
+	index, ok := a.GetAddressMapKey(AddressMapKey{1, 2})
+	assert(t, index == 3)
+	assert(t, ok == true)
+
+	_, ok = a.GetAddressMapKey(AddressMapKey{10, 10})
+	assert(t, ok == false)
+}
+
 func TestDelete(t *testing.T) {
 	a := NewAddressMap()
 	a.Set(1, 2, 3)
@@ -93,6 +111,20 @@ func TestDelete(t *testing.T) {
 	assert(t, ok == true)
 
 	a.Delete(1, 2)
+
+	_, ok = a.Get(1, 2)
+	assert(t, ok == false)
+}
+
+func TestDeleteAddressMapKey(t *testing.T) {
+	a := NewAddressMap()
+	a.SetAddressMapKey(AddressMapKey{1, 2}, 3)
+
+	index, ok := a.GetAddressMapKey(AddressMapKey{1, 2})
+	assert(t, index == 3)
+	assert(t, ok == true)
+
+	a.DeleteAddressMapKey(AddressMapKey{1, 2})
 
 	_, ok = a.Get(1, 2)
 	assert(t, ok == false)
