@@ -1,5 +1,8 @@
 language: go
 
+install:
+    - go get code.google.com/p/go.tools/cmd/cover
+
 matrix:
     include:
         - go: 1.1
