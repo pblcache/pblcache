@@ -7,7 +7,7 @@ install:
 matrix:
     include:
         - go: 1.1
-          env: OPTIONS="-race -cpu 2 -cover"
+          env: OPTIONS=""
         - go: 1.2
           env: OPTIONS="-cpu 2 -cover"
         - go: tip
