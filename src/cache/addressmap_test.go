@@ -56,6 +56,12 @@ func concurrentTester(t *testing.T,
 		index, ok := a.Get(objid, lba)
 		assert(t, index == val)
 		assert(t, ok == true)
+
+		a.Delete(objid, lba)
+
+		_, ok = a.Get(objid, lba)
+		assert(t, ok == false)
+
 	}
 
 }
@@ -74,7 +80,21 @@ func TestGet(t *testing.T) {
 	assert(t, index == 3)
 	assert(t, ok == true)
 
-	index, ok = a.Get(10, 10)
+	_, ok = a.Get(10, 10)
+	assert(t, ok == false)
+}
+
+func TestDelete(t *testing.T) {
+	a := NewAddressMap()
+	a.Set(1, 2, 3)
+
+	index, ok := a.Get(1, 2)
+	assert(t, index == 3)
+	assert(t, ok == true)
+
+	a.Delete(1, 2)
+
+	_, ok = a.Get(1, 2)
 	assert(t, ok == false)
 }
 

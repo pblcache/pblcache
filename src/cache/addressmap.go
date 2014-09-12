@@ -53,3 +53,10 @@ func (a *AddressMap) Get(objid, lba uint64) (index uint64, found bool) {
 	index, found = a.addressmap[AddressMapKey{objid, lba}]
 	return
 }
+
+func (a *AddressMap) Delete(objid, lba uint64) {
+	a.rwlock.Lock()
+	defer a.rwlock.Unlock()
+
+	delete(a.addressmap, AddressMapKey{objid, lba})
+}
