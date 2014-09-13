@@ -25,9 +25,11 @@ import (
 func main() {
 	fmt.Print("Hello\n")
 
-	flag.Parse()
-	c := cache.NewIoCacheKvDB(102400, 1024, true /* writethrough */, 1024)
-	c.Close()
+	/*
+		flag.Parse()
+		c := cache.NewIoCacheKvDB(102400, 1024, true , 1024)
+		c.Close()
+	*/
 
 	fmt.Print("Goodbye\n")
 }
