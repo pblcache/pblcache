@@ -48,6 +48,9 @@ func (a *AddressMap) GetAddressMapKey(key AddressMapKey) (uint64, bool) {
 func (a *AddressMap) DeleteAddressMapKey(key AddressMapKey) {
 	a.Delete(key.objid, key.lba)
 }
+func (a *AddressMap) HasAddressMapKey(key AddressMapKey) bool {
+	return a.Has(key.objid, key.lba)
+}
 
 func (a *AddressMap) Set(objid, lba uint64, index uint64) {
 	a.rwlock.Lock()
@@ -69,4 +72,10 @@ func (a *AddressMap) Delete(objid, lba uint64) {
 	defer a.rwlock.Unlock()
 
 	delete(a.addressmap, AddressMapKey{objid, lba})
+}
+
+func (a *AddressMap) Has(objid, lba uint64) bool {
+	_, ok := a.Get(objid, lba)
+
+	return ok
 }

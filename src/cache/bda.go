@@ -43,7 +43,7 @@ func NewBlockDescriptorArray(size uint64, addressmap *AddressMap) *BlockDescript
 	return b
 }
 
-func (c *BlockDescriptorArray) Insert(address AddressMapKey) (newindex uint64, err error) {
+func (c *BlockDescriptorArray) Alloc(address AddressMapKey) (newindex uint64, err error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -81,7 +81,7 @@ func (c *BlockDescriptorArray) Using(index uint64) {
 	c.bds[index].mru = true
 }
 
-func (c *BlockDescriptorArray) Delete(index uint64) {
+func (c *BlockDescriptorArray) Free(index uint64) {
 	godbc.Require(index < c.size)
 	c.lock.Lock()
 	defer c.lock.Unlock()
