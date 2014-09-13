@@ -17,9 +17,7 @@
 package main
 
 import (
-	"flag"
 	"fmt"
-	"github.com/pblcache/pblcache/src/cache"
 )
 
 func main() {
