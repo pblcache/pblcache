@@ -8,11 +8,12 @@ install:
 matrix:
     include:
         - go: 1.2
-          env: OPTIONS="-cpu 2 -cover"
+          env: OPTIONS="-cpu 2"
         - go: tip
-          env: OPTIONS="-race -cpu 2 -cover"
+          env: OPTIONS="-race -cpu 2"
 
 script:
     - go fmt ./... | wc -l | grep 0
     - go vet ./...
     - go test $OPTIONS ./...
+    - bash .travis-coverage
