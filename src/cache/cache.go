@@ -22,7 +22,7 @@ import (
 )
 
 type PblCache struct {
-	stats        *CacheStats
+                    stats        *CacheStats
 	cachemap     *CacheMap
 	blocksize    uint32
 	cachesize    uint64
