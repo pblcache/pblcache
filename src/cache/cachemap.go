@@ -53,7 +53,7 @@ func NewCacheMap(size uint64) *CacheMap {
 	return b
 }
 
-func (c *CacheMap) Alloc(address AddressMapKey) (newindex uint64, err error) {
+func (c *CacheMap) Alloc(address AddressMapKey) (newindex uint64) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -69,7 +69,6 @@ func (c *CacheMap) Alloc(address AddressMapKey) (newindex uint64, err error) {
 				}
 
 				newindex = c.index
-				err = nil
 
 				bd.address = address
 				bd.mru = false
@@ -102,10 +101,13 @@ func (c *CacheMap) Free(index uint64) {
 	c.DeleteAddressMapKey(c.bds[index].address)
 }
 
-func (c *CacheMap) FreeAddress(key AddressMapKey) {
+func (c *CacheMap) FreeAddress(key AddressMapKey) bool {
 	if index, ok := c.GetAddressMapKey(key); ok {
 		c.Free(index)
+		return true
 	}
+
+	return false
 }
 
 func (c *CacheMap) UsingAddress(key AddressMapKey) {

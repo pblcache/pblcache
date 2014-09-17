@@ -26,12 +26,11 @@ func TestAlloc(t *testing.T) {
 	cmap.SetAddressMapKey(id, 3)
 	assert(t, cmap.HasAddressMapKey(id))
 
-	index, err := cmap.Alloc(id)
+	index := cmap.Alloc(id)
 	assert(t, cmap.bds[0].address == id)
 	assert(t, cmap.bds[0].mru == false)
 	assert(t, cmap.bds[0].used == true)
 	assert(t, index == 0)
-	assert(t, err == nil)
 }
 
 func TestUsing(t *testing.T) {
@@ -41,12 +40,11 @@ func TestUsing(t *testing.T) {
 	cmap.SetAddressMapKey(id, 3)
 	assert(t, cmap.HasAddressMapKey(id))
 
-	index, err := cmap.Alloc(id)
+	index := cmap.Alloc(id)
 	assert(t, cmap.bds[0].address == id)
 	assert(t, cmap.bds[0].mru == false)
 	assert(t, cmap.bds[0].used == true)
 	assert(t, index == 0)
-	assert(t, err == nil)
 
 	cmap.Using(index)
 	assert(t, cmap.bds[0].address == id)
@@ -61,12 +59,11 @@ func TestFree(t *testing.T) {
 	cmap.SetAddressMapKey(id, 3)
 	assert(t, cmap.HasAddressMapKey(id))
 
-	index, err := cmap.Alloc(id)
+	index := cmap.Alloc(id)
 	assert(t, cmap.bds[0].address == id)
 	assert(t, cmap.bds[0].mru == false)
 	assert(t, cmap.bds[0].used == true)
 	assert(t, index == 0)
-	assert(t, err == nil)
 
 	cmap.Free(index)
 	assert(t, cmap.bds[0].mru == false)
@@ -80,7 +77,7 @@ func TestEvictions(t *testing.T) {
 	id2 := AddressMapKey{1, 3}
 	id3 := AddressMapKey{2, 2}
 
-	index, err := cmap.Alloc(id1)
+	index := cmap.Alloc(id1)
 	cmap.SetAddressMapKey(id1, index)
 	assert(t, cmap.HasAddressMapKey(id1))
 	assert(t, !cmap.HasAddressMapKey(id2))
@@ -89,9 +86,8 @@ func TestEvictions(t *testing.T) {
 	assert(t, cmap.bds[0].mru == false)
 	assert(t, cmap.bds[0].used == true)
 	assert(t, index == 0)
-	assert(t, err == nil)
 
-	index, err = cmap.Alloc(id2)
+	index = cmap.Alloc(id2)
 	cmap.SetAddressMapKey(id2, index)
 	assert(t, cmap.HasAddressMapKey(id1))
 	assert(t, cmap.HasAddressMapKey(id2))
@@ -100,14 +96,13 @@ func TestEvictions(t *testing.T) {
 	assert(t, cmap.bds[1].mru == false)
 	assert(t, cmap.bds[1].used == true)
 	assert(t, index == 1)
-	assert(t, err == nil)
 
 	cmap.Using(0)
 	assert(t, cmap.bds[0].address == id1)
 	assert(t, cmap.bds[0].mru == true)
 	assert(t, cmap.bds[0].used == true)
 
-	index, err = cmap.Alloc(id3)
+	index = cmap.Alloc(id3)
 	cmap.SetAddressMapKey(id3, index)
 	assert(t, cmap.HasAddressMapKey(id1))
 	assert(t, !cmap.HasAddressMapKey(id2))
@@ -119,7 +114,6 @@ func TestEvictions(t *testing.T) {
 	assert(t, cmap.bds[1].mru == false)
 	assert(t, cmap.bds[1].used == true)
 	assert(t, index == 1)
-	assert(t, err == nil)
 
 	cmap.Free(1)
 	assert(t, cmap.HasAddressMapKey(id1))
@@ -128,7 +122,7 @@ func TestEvictions(t *testing.T) {
 	assert(t, cmap.bds[1].mru == false)
 	assert(t, cmap.bds[1].used == false)
 
-	index, err = cmap.Alloc(id2)
+	index = cmap.Alloc(id2)
 	cmap.SetAddressMapKey(id2, index)
 	assert(t, !cmap.HasAddressMapKey(id1))
 	assert(t, cmap.HasAddressMapKey(id2))
@@ -139,6 +133,5 @@ func TestEvictions(t *testing.T) {
 	assert(t, cmap.bds[1].mru == false)
 	assert(t, cmap.bds[1].used == false)
 	assert(t, index == 0)
-	assert(t, err == nil)
 
 }

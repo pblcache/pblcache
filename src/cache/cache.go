@@ -59,59 +59,38 @@ func (c *PblCache) Close() {
 }
 
 func (c *PblCache) Invalidate(key AddressMapKey) {
-	if c.cachemap.HasAddressMapKey(key) {
-		c.stats.writehits++
+	if ok := c.cachemap.FreeAddress(key); ok {
 		c.stats.invalidations++
-		c.cachemap.FreeAddress(key)
-
-		/*
-			start := time.Now()
-			c.db.Delete([]byte(key), index)
-			end := time.Now()
-			c.stats.tdeletions.Add(end.Sub(start))
-		*/
 	}
 }
 
-func (c *PblCache) Insert(key AddressMapKey) {
+func (c *PblCache) Set(obj, block uint64, buf []byte) {
+
 	c.stats.insertions++
 
-	index, _ := c.cachemap.Alloc(key)
+	key := AddressMapKey{obj, block}
+	index := c.cachemap.Alloc(key)
+
+	// Write to Log
 
 	// Insert new key in cache map
 	c.cachemap.SetAddressMapKey(key, index)
 
 }
 
-func (c *PblCache) Write(obj, block uint64) {
-	c.stats.writes++
+func (c *PblCache) Get(obj, block uint64, buf []byte) bool {
 
-	key := AddressMapKey{obj, block}
-
-	// Invalidate
-	c.Invalidate(key)
-
-	// We would do back end IO here
-
-	// Insert
-	if c.writethrough {
-		c.Insert(key)
-	}
-}
-
-func (c *PblCache) Read(obj, block uint64) bool {
 	c.stats.reads++
 
 	if _, ok := c.cachemap.Get(obj, block); ok {
-		// Read Hit
 		c.stats.readhits++
-		return true
 
-	} else {
-		// Read miss
-		c.Insert(AddressMapKey{obj, block})
-		return false
+		// Get data
+
+		return true
 	}
+
+	return false
 }
 
 func (c *PblCache) String() string {
