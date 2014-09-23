@@ -3,25 +3,39 @@
 # We cannot use go test -coverprofile=cover.out ./... because
 # the tool requires that it be used only on one package when
 # capturing the coverage
-
 # This is why we need this little script here.
 packages="./src/cache ./src/apps/pblcached"
+COVERFILE=packagecover.out
 
-for pkg in $packages ; do
-    echo "-- Testing $pkg --"
+coverage()
+{
 
-    # Collect coverage
-    go test -covermode=count -coverprofile=cover.out $pkg || exit 1
+    echo "mode: count" > $COVERFILE
+    for pkg in $packages ; do
+        echo "-- Testing $pkg --"
 
-    # Show in the command line
-    go tool cover -func=cover.out
+        # Collect coverage
+        go test -covermode=count -coverprofile=cover.out $pkg || exit 1
 
-    # Send to coveralls.io
-    $HOME/gopath/bin/goveralls \
-        -coverprofile=cover.out \
-        -service=travis-ci \
-        -repotoken $COVERALLS_TOKEN
+        # Show in the command line
+        go tool cover -func=cover.out
 
-    # Cleanup
-    rm -f cover.out
-done
+        # Append to coverfile
+        grep -v "^mode: count" cover.out >> $COVERFILE
+
+        # Cleanup
+        rm -f cover.out
+    done
+}
+
+coverage
+
+# Send to coveralls.io
+$HOME/gopath/bin/goveralls \
+    -coverprofile=cover.out \
+    -service=travis-ci \
+    -repotoken $COVERALLS_TOKEN
+
+# Clean up
+rm -f $COVERFILE > /dev/null 2>&1
+exit 0
