@@ -10,11 +10,11 @@ env:
 matrix:
   include:
   - go: 1.2
-    env: OPTIONS="-cpu 2"
+    env: OPTIONS="-cpu 2" COVERAGE="true"
   - go: tip
     env: OPTIONS="-race -cpu 2"
 script:
 - go fmt ./... | wc -l | grep 0
 - go vet ./...
 - go test $OPTIONS ./...
-- bash .travis-coverage
+- [ -n "$COVERAGE" ] && bash .travis-coverage

@@ -32,7 +32,7 @@ coverage
 
 # Send to coveralls.io
 $HOME/gopath/bin/goveralls \
-    -coverprofile=cover.out \
+    -coverprofile=$COVERFILE \
     -service=travis-ci \
     -repotoken $COVERALLS_TOKEN
 
