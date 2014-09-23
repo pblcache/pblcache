@@ -1,12 +1,12 @@
 language: go
 install:
-  - go get code.google.com/p/go.tools/cmd/cover
-  - go get code.google.com/p/go.tools/cmd/vet
-  - go get github.com/mattn/goveralls
-  - go get -v ./...
+- go get code.google.com/p/go.tools/cmd/cover
+- go get code.google.com/p/go.tools/cmd/vet
+- go get github.com/mattn/goveralls
+- go get -v ./...
 env:
   global:
-    secure: NRoQdRXqFJF5X4JSZqf/jl/vZ/V50RPwsDaDQEjGsZdx7Hjb4YnlMe/dawh63WY0YGUMIRcu1fYr62GrkjFdW+fQ9tWS/Mm5+02WZYvBj8AQv+wDaeleRao+SWqAkQa8Ms1eJyEeybIX4Nti49ajRhuDb3/hWom3iU/1yXp/iA4=
+  - secure: XbgkCwQcPJzpkaVR9HJPyKezpEDrZQEHwhYueiWgsC7YKJIqROfHQ/EPZNQpXCW/v24Sp4RQeQf4RMcnnj5Dy7XBzbkBmMIjZs/Tvp8wTwFk0BqrD2oFm7Uc//iAIIgrUnOgJl/d+GcmZHyVOhHiAuNwJTIP4Cnmjk8DKL7DdU8=
 matrix:
   include:
   - go: 1.2
@@ -14,7 +14,7 @@ matrix:
   - go: tip
     env: OPTIONS="-race -cpu 2"
 script:
-  - go fmt ./... | wc -l | grep 0
-  - go vet ./...
-  - go test $OPTIONS ./...
-  - bash .travis-coverage
+- go fmt ./... | wc -l | grep 0
+- go vet ./...
+- go test $OPTIONS ./...
+- bash .travis-coverage
