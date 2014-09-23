@@ -9,7 +9,19 @@ packages="./src/cache ./src/apps/pblcached"
 
 for pkg in $packages ; do
     echo "-- Testing $pkg --"
-    go test -coverprofile=cover.out $pkg || exit 1
+
+    # Collect coverage
+    go test -covermode=count -coverprofile=cover.out $pkg || exit 1
+
+    # Show in the command line
     go tool cover -func=cover.out
+
+    # Send to coveralls.io
+    $GOPATH/bin/goveralls \
+        -coverprofile=coverprofile \
+        -service=travis-ci \
+        -repotoken $COVERALLS_TOKEN
+
+    # Cleanup
     rm -f cover.out
 done
