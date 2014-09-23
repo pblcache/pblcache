@@ -18,7 +18,7 @@ for pkg in $packages ; do
 
     # Send to coveralls.io
     $HOME/gopath/bin/goveralls \
-        -coverprofile=coverprofile \
+        -coverprofile=cover.out \
         -service=travis-ci \
         -repotoken $COVERALLS_TOKEN
 
