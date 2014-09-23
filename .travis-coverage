@@ -17,7 +17,7 @@ for pkg in $packages ; do
     go tool cover -func=cover.out
 
     # Send to coveralls.io
-    $GOPATH/bin/goveralls \
+    $HOME/gopath/bin/goveralls \
         -coverprofile=coverprofile \
         -service=travis-ci \
         -repotoken $COVERALLS_TOKEN
