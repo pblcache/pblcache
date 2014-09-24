@@ -39,10 +39,10 @@ func assert(t *testing.T, b bool) {
 func concurrentTester(t *testing.T,
 	a *AddressMap,
 	wg *sync.WaitGroup,
-	count int) {
+	count int,
+	r *rand.Rand) {
 
 	defer wg.Done()
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for i := 0; i < count; i++ {
 		address := uint64(r.Int63())
@@ -102,9 +102,10 @@ func TestConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	a := NewAddressMap()
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		go concurrentTester(t, a, &wg, 1000)
+		go concurrentTester(t, a, &wg, 1000, r)
 	}
 
 	wg.Wait()
