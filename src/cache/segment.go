@@ -81,7 +81,7 @@ func (s *Segment) Evict(addressmap *AddressMap) int {
 	return evictions
 }
 
-func (s *Segment) Delete(addressmap AddressMap, block int) {
+func (s *Segment) Delete(addressmap *AddressMap, block int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.bds[block].free()

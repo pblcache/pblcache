@@ -109,7 +109,7 @@ func (c *CacheMap) Release(index uint64) {
 
 func (c *CacheMap) Free(index uint64) {
 	segment, block := c.segment_from_index(index)
-	c.segments[segment].Delete(c.addressmap, block)
+	c.segments[segment].Delete(&c.addressmap, block)
 }
 
 func (c *CacheMap) Get(address uint64) (index uint64, found bool) {
