@@ -45,89 +45,56 @@ func concurrentTester(t *testing.T,
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for i := 0; i < count; i++ {
-		objid := uint64(r.Int63())
-		lba := uint64(r.Int63())
+		address := uint64(r.Int63())
 		val := uint64(r.Int63())
 
-		a.Set(objid, lba, val)
+		a.Set(address, val)
 
 		time.Sleep(time.Microsecond)
 
-		index, ok := a.Get(objid, lba)
+		index, ok := a.Get(address)
 		assert(t, index == val)
 		assert(t, ok == true)
+		assert(t, a.Has(address))
 
-		a.Delete(objid, lba)
-
-		_, ok = a.Get(objid, lba)
-		assert(t, ok == false)
-
+		a.Delete(address)
+		assert(t, !a.Has(address))
 	}
 
 }
 
 func TestSet(t *testing.T) {
 	a := NewAddressMap()
-	a.Set(1, 2, 3)
-	assert(t, a.addressmap[AddressMapKey{1, 2}] == 3)
-}
-
-func TestSetAddressMapKey(t *testing.T) {
-	a := NewAddressMap()
-	a.SetAddressMapKey(AddressMapKey{1, 2}, 3)
-	assert(t, a.addressmap[AddressMapKey{1, 2}] == 3)
+	a.Set(1, 2)
+	assert(t, a.addressmap[1] == 2)
 }
 
 func TestGet(t *testing.T) {
 	a := NewAddressMap()
-	a.Set(1, 2, 3)
+	a.Set(1, 2)
 
-	index, ok := a.Get(1, 2)
-	assert(t, index == 3)
+	index, ok := a.Get(1)
+	assert(t, index == 2)
 	assert(t, ok == true)
 
-	_, ok = a.Get(10, 10)
-	assert(t, ok == false)
-}
-
-func TestGetAddressMapKey(t *testing.T) {
-	a := NewAddressMap()
-	a.SetAddressMapKey(AddressMapKey{1, 2}, 3)
-
-	index, ok := a.GetAddressMapKey(AddressMapKey{1, 2})
-	assert(t, index == 3)
-	assert(t, ok == true)
-
-	_, ok = a.GetAddressMapKey(AddressMapKey{10, 10})
+	_, ok = a.Get(10)
 	assert(t, ok == false)
 }
 
 func TestDelete(t *testing.T) {
 	a := NewAddressMap()
-	a.Set(1, 2, 3)
+	a.Set(1, 2)
 
-	index, ok := a.Get(1, 2)
-	assert(t, index == 3)
+	index, ok := a.Get(1)
+	assert(t, index == 2)
 	assert(t, ok == true)
+	assert(t, a.Has(1))
 
-	a.Delete(1, 2)
+	a.Delete(1)
 
-	_, ok = a.Get(1, 2)
+	_, ok = a.Get(1)
 	assert(t, ok == false)
-}
-
-func TestDeleteAddressMapKey(t *testing.T) {
-	a := NewAddressMap()
-	a.SetAddressMapKey(AddressMapKey{1, 2}, 3)
-
-	index, ok := a.GetAddressMapKey(AddressMapKey{1, 2})
-	assert(t, index == 3)
-	assert(t, ok == true)
-
-	a.DeleteAddressMapKey(AddressMapKey{1, 2})
-
-	_, ok = a.Get(1, 2)
-	assert(t, ok == false)
+	assert(t, !a.Has(1))
 }
 
 func TestConcurrent(t *testing.T) {
@@ -149,7 +116,7 @@ func BenchmarkSet(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui := uint64(i)
-		a.Set(ui, ui, ui)
+		a.Set(ui, ui)
 	}
 }
 
@@ -158,12 +125,12 @@ func BenchmarkGet(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		ui := uint64(i)
-		a.Set(ui, ui, ui)
+		a.Set(ui, ui)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ui := uint64(i)
-		a.Get(ui, ui)
+		a.Get(ui)
 	}
 }

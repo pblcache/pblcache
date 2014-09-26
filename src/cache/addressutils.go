@@ -15,14 +15,20 @@
 //
 package cache
 
-/*
-import (
-	"testing"
-)
-
-func TestNewPblCache(t *testing.T) {
-	c := NewPblCache(4096, true, 512)
-	assert(t, c != nil)
+type Address struct {
+	devid uint16
+	lba   uint64
 }
 
-*/
+func Address64(address Address) uint64 {
+	return (uint64(address.devid) << 32) | uint64(address.lba)
+}
+
+func AddressValue(address uint64) Address {
+	var a Address
+
+	a.devid = uint16(address >> 32)
+	a.lba = (0xFFFF << 32) &^ address
+
+	return a
+}

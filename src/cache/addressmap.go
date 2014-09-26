@@ -20,62 +20,49 @@ import (
 	"sync"
 )
 
-type AddressMapKey struct {
-	objid, lba uint64
-}
-
 type AddressMap struct {
-	addressmap map[AddressMapKey]uint64
+	addressmap map[uint64]uint64
 	rwlock     sync.RWMutex
 }
 
 func NewAddressMap() *AddressMap {
 	a := AddressMap{}
-	a.addressmap = make(map[AddressMapKey]uint64)
 
-	godbc.Ensure(a.addressmap != nil)
+	InitAddressmap(&a)
 
 	return &a
 
 }
 
-func (a *AddressMap) SetAddressMapKey(key AddressMapKey, index uint64) {
-	a.Set(key.objid, key.lba, index)
-}
-func (a *AddressMap) GetAddressMapKey(key AddressMapKey) (uint64, bool) {
-	return a.Get(key.objid, key.lba)
-}
-func (a *AddressMap) DeleteAddressMapKey(key AddressMapKey) {
-	a.Delete(key.objid, key.lba)
-}
-func (a *AddressMap) HasAddressMapKey(key AddressMapKey) bool {
-	return a.Has(key.objid, key.lba)
+func InitAddressmap(a *AddressMap) {
+	a.addressmap = make(map[uint64]uint64)
+	godbc.Ensure(a.addressmap != nil)
 }
 
-func (a *AddressMap) Set(objid, lba uint64, index uint64) {
+func (a *AddressMap) Set(address, index uint64) {
 	a.rwlock.Lock()
 	defer a.rwlock.Unlock()
 
-	a.addressmap[AddressMapKey{objid, lba}] = index
+	a.addressmap[address] = index
 }
 
-func (a *AddressMap) Get(objid, lba uint64) (index uint64, found bool) {
+func (a *AddressMap) Get(address uint64) (index uint64, found bool) {
 	a.rwlock.RLock()
 	defer a.rwlock.RUnlock()
 
-	index, found = a.addressmap[AddressMapKey{objid, lba}]
+	index, found = a.addressmap[address]
 	return
 }
 
-func (a *AddressMap) Delete(objid, lba uint64) {
+func (a *AddressMap) Delete(address uint64) {
 	a.rwlock.Lock()
 	defer a.rwlock.Unlock()
 
-	delete(a.addressmap, AddressMapKey{objid, lba})
+	delete(a.addressmap, address)
 }
 
-func (a *AddressMap) Has(objid, lba uint64) bool {
-	_, ok := a.Get(objid, lba)
+func (a *AddressMap) Has(address uint64) bool {
+	_, ok := a.Get(address)
 
 	return ok
 }

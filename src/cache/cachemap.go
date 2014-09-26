@@ -16,66 +16,81 @@
 
 package cache
 
-import (
-	"github.com/lpabon/godbc"
-	"sync"
-)
-
-type BlockDescriptor struct {
-	address AddressMapKey
-	mru     bool
-	used    bool
-}
-
 type CacheMap struct {
-	bds   []BlockDescriptor
-	size  uint64
-	index uint64
-	lock  sync.Mutex
-
-	AddressMap
+	segments           []Segment
+	addressmap         AddressMap
+	size               uint64
+	index              uint64
+	segment            uint64
+	blocks_per_segment int
 }
 
-func NewCacheMap(size uint64) *CacheMap {
+func NewCacheMap(blocks uint64, blocks_per_segment int) *CacheMap {
 
-	if 0 == size {
+	if 0 == blocks {
 		return nil
 	}
 
 	b := &CacheMap{}
-	b.bds = make([]BlockDescriptor, size)
-	b.size = size
-	b.addressmap = make(map[AddressMapKey]uint64)
 
-	godbc.Ensure(b.bds != nil)
-	godbc.Ensure(b.addressmap != nil)
+	b.size = blocks
+	b.blocks_per_segment = blocks_per_segment
+
+	// Initialize addressmap
+	InitAddressmap(&b.addressmap)
+
+	// Initialize segments
+	b.segments = make([]Segment, blocks)
+	for s := 0; s < len(b.segments); s++ {
+		InitSegment(&b.segments[s], blocks_per_segment)
+	}
 
 	return b
 }
 
-func (c *CacheMap) Alloc(address AddressMapKey) (newindex uint64) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+func (c *CacheMap) segment_from_index(index uint64) (segment uint64, block int) {
+	segment = index / uint64(c.blocks_per_segment)
+	block = int(index % uint64(c.blocks_per_segment))
+	return
+}
 
+func (c *CacheMap) index_from_segment(segment uint64, block int) uint64 {
+	return (segment * uint64(c.blocks_per_segment)) + uint64(block)
+}
+
+func (c *CacheMap) init_next_segment(segment uint64) {
 	for {
-		for ; c.index < c.size; c.index++ {
-			bd := &c.bds[c.index]
-
-			if bd.mru {
-				bd.mru = false
-			} else {
-				if bd.used {
-					c.DeleteAddressMapKey(bd.address)
-				}
-
-				newindex = c.index
-
-				bd.address = address
-				bd.mru = false
-				bd.used = true
-				c.index++
-
+		for c.segment = segment; c.segment < uint64(len(c.segments)); c.segment++ {
+			// Evict any blocks no longer needed, and return
+			// the number of evicted blocks
+			if 0 != c.segments[c.segment].Evict(c.addressmap) {
 				return
+			}
+		}
+		c.segment = 0
+	}
+}
+
+func (c *CacheMap) Alloc(address uint64) (newindex uint64) {
+	for {
+
+		// Start at the current block
+		for ; c.index < c.size; c.index++ {
+
+			// Get which segment the current block is
+			segment, block := c.segment_from_index(c.index)
+
+			// Check if we need to move to the next available
+			// segment.
+			if segment > c.segment {
+				c.init_next_segment(segment)
+			} else {
+
+				// Ask the current segment for the next available block
+				if newblock, ok := c.segments[c.segment].Alloc(address, block); ok {
+					newindex = c.index_from_segment(c.segment, newblock)
+					return
+				}
 			}
 		}
 		c.index = 0
@@ -83,35 +98,25 @@ func (c *CacheMap) Alloc(address AddressMapKey) (newindex uint64) {
 }
 
 func (c *CacheMap) Using(index uint64) {
-	godbc.Require(index < c.size)
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	segment, block := c.segment_from_index(index)
+	c.segments[segment].Used(block)
+}
 
-	c.bds[index].mru = true
+func (c *CacheMap) Release(index uint64) {
+	segment, _ := c.segment_from_index(index)
+	c.segments[segment].Release()
 }
 
 func (c *CacheMap) Free(index uint64) {
-	godbc.Require(index < c.size)
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.bds[index].mru = false
-	c.bds[index].used = false
-
-	c.DeleteAddressMapKey(c.bds[index].address)
+	segment, block := c.segment_from_index(index)
+	c.segments[segment].Delete(c.addressmap, block)
 }
 
-func (c *CacheMap) FreeAddress(key AddressMapKey) bool {
-	if index, ok := c.GetAddressMapKey(key); ok {
-		c.Free(index)
-		return true
-	}
-
-	return false
+func (c *CacheMap) Get(address uint64) (index uint64, found bool) {
+	segment, _ := c.segment_from_index(index)
+	return c.segments[segment].Get(c.addressmap, address)
 }
 
-func (c *CacheMap) UsingAddress(key AddressMapKey) {
-	if index, ok := c.GetAddressMapKey(key); ok {
-		c.Using(index)
-	}
+func (c *CacheMap) Set(address, index uint64) {
+	c.addressmap.Set(address, index)
 }

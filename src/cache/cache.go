@@ -16,6 +16,7 @@
 
 package cache
 
+/*
 import (
 	"fmt"
 	"github.com/lpabon/godbc"
@@ -106,3 +107,5 @@ func (c *PblCache) Stats() *CacheStats {
 func (c *PblCache) StatsClear() {
 	c.stats = NewCacheStats()
 }
+
+*/
