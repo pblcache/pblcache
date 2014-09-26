@@ -63,7 +63,7 @@ func (c *CacheMap) init_next_segment(segment uint64) {
 		for c.segment = segment; c.segment < uint64(len(c.segments)); c.segment++ {
 			// Evict any blocks no longer needed, and return
 			// the number of evicted blocks
-			if 0 != c.segments[c.segment].Evict(c.addressmap) {
+			if 0 != c.segments[c.segment].Evict(&c.addressmap) {
 				return
 			}
 		}
@@ -114,7 +114,7 @@ func (c *CacheMap) Free(index uint64) {
 
 func (c *CacheMap) Get(address uint64) (index uint64, found bool) {
 	segment, _ := c.segment_from_index(index)
-	return c.segments[segment].Get(c.addressmap, address)
+	return c.segments[segment].Get(&c.addressmap, address)
 }
 
 func (c *CacheMap) Set(address, index uint64) {

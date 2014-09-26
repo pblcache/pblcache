@@ -49,7 +49,7 @@ func InitSegment(s *Segment, blocks int) {
 	s.bds = make([]BlockDescriptor, blocks)
 }
 
-func (s *Segment) Evict(addressmap AddressMap) int {
+func (s *Segment) Evict(addressmap *AddressMap) int {
 
 	// This lock assures there is no one reading or writing
 	// to this segment on the storage device
@@ -127,7 +127,7 @@ func (s *Segment) Alloc(address uint64, block int) (newindex int, allocated bool
 	return
 }
 
-func (s *Segment) Get(addresmap AddressMap, address uint64) (index uint64, found bool) {
+func (s *Segment) Get(addresmap *AddressMap, address uint64) (index uint64, found bool) {
 	s.Reserve()
 	if index, found = addresmap.Get(address); found {
 		// Address is available.  Do not release segment
