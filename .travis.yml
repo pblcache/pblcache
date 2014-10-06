@@ -1,6 +1,5 @@
 language: go
 install:
-- go get github.com/axw/gocov/gocov
 - go get code.google.com/p/go.tools/cmd/cover
 - go get code.google.com/p/go.tools/cmd/vet
 - go get github.com/mattn/goveralls
@@ -18,4 +17,4 @@ script:
 - go fmt ./... | wc -l | grep 0
 - go vet ./...
 - go test $OPTIONS ./...
-- if [[ -n "$COVERAGE" ]]; then $HOME/gopath/bin/goveralls -repotoken $COVERALLS_TOKEN ; fi
+- if [[ -n "$COVERAGE" ]]; then bash .travis-coverage; fi
