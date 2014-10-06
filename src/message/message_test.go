@@ -52,7 +52,7 @@ type Data struct {
 	f   float64
 }
 
-func TestMessage(t *testing.T) {
+func TestMessagePriv(t *testing.T) {
 	m := &Message{
 		Type: MsgGet,
 	}
@@ -71,4 +71,55 @@ func TestMessage(t *testing.T) {
 	assert(t, newD.f == d.f)
 	assert(t, newD.i64 == d.i64)
 	assert(t, newD.s == d.s)
+}
+
+func TestMessageDone(t *testing.T) {
+
+	// Channel to send
+	worker := make(chan *Message)
+
+	// Return channel
+	backhere := make(chan *Message)
+
+	m := &Message{
+		Type:    MsgShutdown,
+		RetChan: backhere,
+		Offset:  1,
+
+		// Create some private data
+		Priv: &Data{i: 1},
+	}
+
+	// Start 'work' service
+	go func() {
+
+		// Wait for work
+		msg := <-worker
+		assert(t, msg.Type == MsgShutdown)
+		assert(t, msg.Offset == 1)
+
+		// Increment the offset here to test
+		msg.Offset += 1
+
+		// Return to channel
+		msg.Done()
+
+	}()
+
+	// Send to 'work'
+	worker <- m
+
+	// Wait until it is done
+	<-backhere
+
+	// Get the priv data
+	newD := m.Priv.(*Data)
+
+	// Check results
+	assert(t, m.Offset == 2)
+	assert(t, newD.i == 1)
+
+	// Cleanup
+	close(worker)
+	close(backhere)
 }

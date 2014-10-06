@@ -38,12 +38,14 @@ type MessageStats struct {
 }
 
 type Message struct {
-	Type   MsgType
-	Obj    uint16
-	Offset uint64
-	Buffer []byte
-	Stats  MessageStats
-	Priv   interface{}
+	Type    MsgType
+	Obj     uint16
+	Offset  uint64
+	Buffer  []byte
+	Stats   MessageStats
+	Priv    interface{}
+	Err     error
+	RetChan chan *Message
 }
 
 func (m *Message) TimeStart() {
@@ -56,4 +58,8 @@ func (m *Message) TimeStop() {
 
 func (m *Message) String() string {
 	return fmt.Sprintf("Duration %.2f usecs\n", m.Stats.Duration.MeanTimeUsecs())
+}
+
+func (m *Message) Done() {
+	m.RetChan <- m
 }
