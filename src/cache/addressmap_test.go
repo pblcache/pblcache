@@ -16,11 +16,8 @@
 package cache
 
 import (
-	"math/rand"
 	"runtime"
-	"sync"
 	"testing"
-	"time"
 )
 
 func assert(t *testing.T, b bool) {
@@ -34,33 +31,6 @@ func assert(t *testing.T, b bool) {
 			file,
 			line)
 	}
-}
-
-func concurrentTester(t *testing.T,
-	a *AddressMap,
-	wg *sync.WaitGroup,
-	count int,
-	r *rand.Rand) {
-
-	defer wg.Done()
-
-	for i := 0; i < count; i++ {
-		address := uint64(r.Int63())
-		val := uint64(r.Int63())
-
-		a.Set(address, val)
-
-		time.Sleep(time.Microsecond)
-
-		index, ok := a.Get(address)
-		assert(t, index == val)
-		assert(t, ok == true)
-		assert(t, a.Has(address))
-
-		a.Delete(address)
-		assert(t, !a.Has(address))
-	}
-
 }
 
 func TestSet(t *testing.T) {
@@ -95,20 +65,6 @@ func TestDelete(t *testing.T) {
 	_, ok = a.Get(1)
 	assert(t, ok == false)
 	assert(t, !a.Has(1))
-}
-
-func TestConcurrent(t *testing.T) {
-
-	var wg sync.WaitGroup
-
-	a := NewAddressMap()
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go concurrentTester(t, a, &wg, 1000, r)
-	}
-
-	wg.Wait()
 }
 
 func BenchmarkSet(b *testing.B) {
