@@ -40,7 +40,7 @@ func TestNewCache(t *testing.T) {
 	c.Close()
 }
 
-func TestCacheMsgPut(t *testing.T) {
+func TestCacheSimple(t *testing.T) {
 	c := NewCache(4096, true, 512)
 	assert(t, c != nil)
 
@@ -49,6 +49,7 @@ func TestCacheMsgPut(t *testing.T) {
 	m.Offset = 1
 	m.RetChan = here
 
+	// First Put
 	c.Iochan <- m
 	<-here
 	assert(t, m.BlockNum == 0)
@@ -57,14 +58,41 @@ func TestCacheMsgPut(t *testing.T) {
 	assert(t, val == 0)
 	assert(t, ok == true)
 
-	// Send same msg
+	// Insert again.  Should allocate
+	// next block
 	c.Iochan <- m
 	<-here
 	assert(t, m.BlockNum == 1)
+	assert(t, m.Err == nil)
 
 	val, ok = c.addressmap[m.Offset]
 	assert(t, val == 1)
 	assert(t, ok == true)
+
+	// Send a Get
+	mg := message.NewMsgIO(message.MsgGet)
+	mg.Offset = 1
+	mg.RetChan = here
+	c.Iochan <- mg
+	<-here
+	assert(t, mg.BlockNum == 1)
+	assert(t, mg.Err == nil)
+
+	// Send Invalidate
+	mi := message.NewMsgIO(message.MsgInvalidate)
+	mi.Offset = 1
+	mi.RetChan = here
+	c.Iochan <- mi
+	<-here
+	assert(t, mi.Err == nil)
+
+	// Send a Get again, but it should not be there
+	mg = message.NewMsgIO(message.MsgGet)
+	mg.Offset = 1
+	mg.RetChan = here
+	c.Iochan <- mg
+	<-here
+	assert(t, mg.Err == ErrNotFound)
 
 	c.Close()
 }
