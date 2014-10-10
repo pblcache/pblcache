@@ -30,6 +30,10 @@ const (
 	MsgPut
 	MsgGet
 	MsgInvalidate
+	MsgStats
+	MsgObjCreate
+	MsgObjGet
+	MsgObjDelete
 )
 
 type MessageStats struct {
@@ -39,9 +43,6 @@ type MessageStats struct {
 
 type Message struct {
 	Type    MsgType
-	Obj     uint16
-	Offset  uint64
-	Buffer  []byte
 	Stats   MessageStats
 	Priv    interface{}
 	Err     error

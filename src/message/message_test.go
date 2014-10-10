@@ -84,7 +84,6 @@ func TestMessageDone(t *testing.T) {
 	m := &Message{
 		Type:    MsgShutdown,
 		RetChan: backhere,
-		Offset:  1,
 
 		// Create some private data
 		Priv: &Data{i: 1},
@@ -95,11 +94,12 @@ func TestMessageDone(t *testing.T) {
 
 		// Wait for work
 		msg := <-worker
+		d := msg.Priv.(*Data)
 		assert(t, msg.Type == MsgShutdown)
-		assert(t, msg.Offset == 1)
+		assert(t, d.i == 1)
 
 		// Increment the offset here to test
-		msg.Offset += 1
+		d.i += 1
 
 		// Return to channel
 		msg.Done()
@@ -116,8 +116,7 @@ func TestMessageDone(t *testing.T) {
 	newD := m.Priv.(*Data)
 
 	// Check results
-	assert(t, m.Offset == 2)
-	assert(t, newD.i == 1)
+	assert(t, newD.i == 2)
 
 	// Cleanup
 	close(worker)
