@@ -15,6 +15,10 @@
 //
 package message
 
+import (
+	"github.com/lpabon/godbc"
+)
+
 type MsgIo struct {
 	// Object descriptor
 	Obj uint16
@@ -46,5 +50,6 @@ func NewMsgIO(msgtype MsgType) *MsgIo {
 
 // Override Message Done function
 func (m *MsgIo) Done() {
+	godbc.Require(m.RetChan != nil)
 	m.RetChan <- m
 }

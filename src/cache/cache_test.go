@@ -15,14 +15,56 @@
 //
 package cache
 
-/*
 import (
+	"github.com/pblcache/pblcache/src/message"
+	"runtime"
 	"testing"
 )
 
-func TestNewPblCache(t *testing.T) {
-	c := NewPblCache(4096, true, 512)
-	assert(t, c != nil)
+func assert(t *testing.T, b bool) {
+	if !b {
+		pc, file, line, _ := runtime.Caller(1)
+		caller_func_info := runtime.FuncForPC(pc)
+
+		t.Errorf("\n\rASSERT:\tfunc (%s) 0x%x\n\r\tFile %s:%d",
+			caller_func_info.Name(),
+			pc,
+			file,
+			line)
+	}
 }
 
-*/
+func TestNewCache(t *testing.T) {
+	c := NewCache(4096, true, 512)
+	assert(t, c != nil)
+	c.Close()
+}
+
+func TestCacheMsgPut(t *testing.T) {
+	c := NewCache(4096, true, 512)
+	assert(t, c != nil)
+
+	here := make(chan *message.MsgIo)
+	m := message.NewMsgIO(message.MsgPut)
+	m.Offset = 1
+	m.RetChan = here
+
+	c.Iochan <- m
+	<-here
+	assert(t, m.BlockNum == 0)
+
+	val, ok := c.addressmap[m.Offset]
+	assert(t, val == 0)
+	assert(t, ok == true)
+
+	// Send same msg
+	c.Iochan <- m
+	<-here
+	assert(t, m.BlockNum == 1)
+
+	val, ok = c.addressmap[m.Offset]
+	assert(t, val == 1)
+	assert(t, ok == true)
+
+	c.Close()
+}

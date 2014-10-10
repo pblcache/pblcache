@@ -17,6 +17,7 @@ package message
 
 import (
 	"fmt"
+	"github.com/lpabon/godbc"
 	"github.com/lpabon/tm"
 	"time"
 )
@@ -62,5 +63,6 @@ func (m *Message) String() string {
 }
 
 func (m *Message) Done() {
+	godbc.Require(m.RetChan != nil)
 	m.RetChan <- m
 }

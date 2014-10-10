@@ -17,9 +17,11 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 	"github.com/lpabon/godbc"
-	_ "github.com/pblcache/pblcache/src/message"
+	"github.com/pblcache/pblcache/src/message"
+	"sync"
 )
 
 type Cache struct {
@@ -30,7 +32,15 @@ type Cache struct {
 	cachesize    uint64
 	blocks       uint64
 	writethrough bool
+	Iochan       chan *message.MsgIo
+	Msgchan      chan *message.Message
+	quitchan     chan struct{}
+	wg           sync.WaitGroup
 }
+
+var (
+	ErrNotFound = errors.New("Block not found")
+)
 
 // cachesize is in bytes
 // blocksize is in bytes
@@ -49,15 +59,64 @@ func NewCache(cachesize uint64, writethrough bool, blocksize uint64) *Cache {
 	cache.cachemap = NewCacheMap(cache.blocks)
 	cache.addressmap = make(map[uint64]uint64)
 
+	cache.Iochan = make(chan *message.MsgIo, 128)
+	cache.Msgchan = make(chan *message.Message, 128)
+	cache.quitchan = make(chan struct{})
+
 	godbc.Ensure(cache.blocks > 0)
 	godbc.Ensure(cache.cachemap != nil)
 	godbc.Ensure(cache.addressmap != nil)
 	godbc.Ensure(cache.stats != nil)
 
+	// Start goroutine
+	cache.server()
+
 	return cache
 }
 
 func (c *Cache) Close() {
+	close(c.quitchan)
+	c.wg.Wait()
+}
+
+func (c *Cache) server() {
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		for {
+			select {
+			case iomsg := <-c.Iochan:
+				// Do io channel
+				// EMPTY ON QUIT!
+				switch iomsg.Type {
+				case message.MsgPut:
+					// PUT
+					iomsg.BlockNum = c.set(iomsg.Offset)
+				case message.MsgGet:
+					// Get
+					if index, ok := c.get(iomsg.Offset); ok {
+						iomsg.BlockNum = index
+						iomsg.Err = nil
+					} else {
+						iomsg.Err = ErrNotFound
+					}
+
+				case message.MsgInvalidate:
+					c.invalidate(iomsg.Offset)
+
+					// case Release
+				}
+
+				iomsg.Done()
+			case <-c.Msgchan:
+				// Do simple command
+			case <-c.quitchan:
+				// :TODO: Ok for now, but we cannot just quit
+				// We need to empty the Iochan
+				return
+			}
+		}
+	}()
 }
 
 func (c *Cache) invalidate(key uint64) {
@@ -82,6 +141,8 @@ func (c *Cache) set(key uint64) (index uint64) {
 		delete(c.addressmap, evictkey)
 	}
 
+	c.addressmap[key] = index
+
 	return
 }
 
@@ -91,6 +152,7 @@ func (c *Cache) get(key uint64) (index uint64, ok bool) {
 
 	if index, ok = c.addressmap[key]; ok {
 		c.stats.readhits++
+		c.cachemap.Using(index)
 	}
 
 	return
