@@ -29,10 +29,22 @@ type MsgIo struct {
 	// from or write to
 	BlockNum uint64
 
+	// Return pointer to MsgIo
+	RetChan chan *MsgIo
+
 	// Contains Message
 	Message
 }
 
-func NewMsgIO() *MsgIo {
-	return &MsgIo{}
+func NewMsgIO(msgtype MsgType) *MsgIo {
+	return &MsgIo{
+		Message: Message{
+			Type: msgtype,
+		},
+	}
+}
+
+// Override Message Done function
+func (m *MsgIo) Done() {
+	m.RetChan <- m
 }

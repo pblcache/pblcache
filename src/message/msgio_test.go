@@ -20,9 +20,67 @@ import (
 )
 
 func TestMsgIo(t *testing.T) {
-	m := NewMsgIO()
+	c := make(chan *MsgIo)
+	m := NewMsgIO(MsgGet)
+	m.RetChan = c
 	assert(t, m.BlockNum == 0)
 	assert(t, m.Buffer == nil)
 	assert(t, m.Offset == 0)
 	assert(t, m.Obj == 0)
+	assert(t, m.Message.RetChan == nil)
+	assert(t, m.RetChan == c)
+}
+
+func TestMsgIoDone(t *testing.T) {
+
+	// Channel to send
+	worker := make(chan *MsgIo)
+
+	// Return channel
+	backhere := make(chan *MsgIo)
+
+	m := &MsgIo{
+		RetChan: backhere,
+		Message: Message{
+			Type: MsgPut,
+
+			// Create some private data
+			Priv: &Data{i: 1},
+		},
+	}
+
+	// Start 'work' service
+	go func() {
+
+		// Wait for work
+		msg := <-worker
+		d := msg.Priv.(*Data)
+		msg.Buffer = []byte("TESTSTRING")
+		assert(t, msg.Type == MsgPut)
+		assert(t, d.i == 1)
+
+		// Increment the offset here to test
+		d.i += 1
+
+		// Return to channel
+		msg.Done()
+
+	}()
+
+	// Send to 'work'
+	worker <- m
+
+	// Wait until it is done
+	rm := <-backhere
+
+	// Get the priv data
+	newD := rm.Priv.(*Data)
+
+	// Check results
+	assert(t, newD.i == 2)
+	assert(t, string(rm.Buffer) == "TESTSTRING")
+
+	// Cleanup
+	close(worker)
+	close(backhere)
 }
