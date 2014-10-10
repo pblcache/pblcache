@@ -15,20 +15,29 @@
 //
 package cache
 
+import (
+	"github.com/lpabon/godbc"
+)
+
+const (
+	MAX_LBA = uint64(1 << 48)
+)
+
 type Address struct {
 	devid uint16
 	lba   uint64
 }
 
 func Address64(address Address) uint64 {
-	return (uint64(address.devid) << 32) | uint64(address.lba)
+	godbc.Require(address.lba < MAX_LBA)
+	return (uint64(address.devid) << 48) | uint64(address.lba)
 }
 
 func AddressValue(address uint64) Address {
 	var a Address
 
-	a.devid = uint16(address >> 32)
-	a.lba = (0xFFFF << 32) &^ address
+	a.devid = uint16(address >> 48)
+	a.lba = uint64(0xFFFFFFFFFFFF) & address
 
 	return a
 }
