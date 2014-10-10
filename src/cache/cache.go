@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2014 The pblcache Authors
+// Copyright (c) 2014 The Cache Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,16 +16,17 @@
 
 package cache
 
-/*
 import (
 	"fmt"
 	"github.com/lpabon/godbc"
+	_ "github.com/pblcache/pblcache/src/message"
 )
 
-type PblCache struct {
+type Cache struct {
 	stats        *CacheStats
 	cachemap     *CacheMap
-	blocksize    uint32
+	addressmap   map[uint64]uint64
+	blocksize    uint64
 	cachesize    uint64
 	blocks       uint64
 	writethrough bool
@@ -33,79 +34,78 @@ type PblCache struct {
 
 // cachesize is in bytes
 // blocksize is in bytes
-func NewPblCache(cachesize uint64, writethrough bool, blocksize uint32) *PblCache {
+func NewCache(cachesize uint64, writethrough bool, blocksize uint64) *Cache {
 
 	godbc.Require(cachesize > 0)
+	godbc.Require(blocksize > 0)
 
-	cache := &PblCache{}
-	cache.blocks = cachesize / uint64(blocksize)
+	cache := &Cache{}
+	cache.blocks = cachesize / blocksize
 	cache.cachesize = cachesize
 	cache.blocksize = blocksize
 	cache.writethrough = writethrough
 
 	cache.stats = NewCacheStats()
 	cache.cachemap = NewCacheMap(cache.blocks)
-
-	//cache.db = NewKVIoDB("cache.iodb", cachesize, bcsize, blocksize)
-	//godbc.Check(cache.db != nil)
+	cache.addressmap = make(map[uint64]uint64)
 
 	godbc.Ensure(cache.blocks > 0)
 	godbc.Ensure(cache.cachemap != nil)
+	godbc.Ensure(cache.addressmap != nil)
 	godbc.Ensure(cache.stats != nil)
 
 	return cache
 }
 
-func (c *PblCache) Close() {
+func (c *Cache) Close() {
 }
 
-func (c *PblCache) Invalidate(key AddressMapKey) {
-	if ok := c.cachemap.FreeAddress(key); ok {
+func (c *Cache) invalidate(key uint64) {
+	if index, ok := c.addressmap[key]; ok {
 		c.stats.invalidations++
+
+		c.cachemap.Free(index)
+		delete(c.addressmap, key)
 	}
 }
 
-func (c *PblCache) Set(obj, block uint64, buf []byte) {
+func (c *Cache) set(key uint64) (index uint64) {
+
+	var (
+		evictkey uint64
+		evict    bool
+	)
 
 	c.stats.insertions++
 
-	key := AddressMapKey{obj, block}
-	index := c.cachemap.Alloc(key)
+	if index, evictkey, evict = c.cachemap.Insert(key); evict {
+		delete(c.addressmap, evictkey)
+	}
 
-	// Write to Log
-
-	// Insert new key in cache map
-	c.cachemap.SetAddressMapKey(key, index)
-
+	return
 }
 
-func (c *PblCache) Get(obj, block uint64, buf []byte) bool {
+func (c *Cache) get(key uint64) (index uint64, ok bool) {
 
 	c.stats.reads++
 
-	if _, ok := c.cachemap.Get(obj, block); ok {
+	if index, ok = c.addressmap[key]; ok {
 		c.stats.readhits++
-
-		// Get data
-
-		return true
 	}
 
-	return false
+	return
 }
 
-func (c *PblCache) String() string {
+func (c *Cache) String() string {
 	return fmt.Sprintf(
 		"Cache Utilization: 0 \n" +
 			c.stats.String())
 }
 
-func (c *PblCache) Stats() *CacheStats {
+func (c *Cache) Stats() *CacheStats {
 	return c.stats.Copy()
 }
 
-func (c *PblCache) StatsClear() {
+func (c *Cache) StatsClear() {
 	c.stats = NewCacheStats()
 }
-
-*/

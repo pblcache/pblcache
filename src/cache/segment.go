@@ -16,6 +16,7 @@
 
 package cache
 
+/*
 import (
 	"github.com/lpabon/godbc"
 	"sync"
@@ -146,3 +147,5 @@ func (s *Segment) Reserve() {
 func (s *Segment) Release() {
 	s.lock.RUnlock()
 }
+
+*/

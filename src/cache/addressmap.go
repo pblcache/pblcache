@@ -15,6 +15,7 @@
 //
 package cache
 
+/*
 import (
 	"github.com/lpabon/godbc"
 	"sync"
@@ -66,3 +67,4 @@ func (a *AddressMap) Has(address uint64) bool {
 
 	return ok
 }
+*/

@@ -16,39 +16,89 @@
 
 package cache
 
+import (
+	"github.com/lpabon/godbc"
+)
+
+const (
+	INVALID_KEY = ^uint64(0)
+)
+
+type BlockDescriptor struct {
+	key  uint64
+	mru  bool
+	used bool
+}
+
 type CacheMap struct {
-	segments           []Segment
-	addressmap         AddressMap
-	size               uint64
-	index              uint64
-	segment            uint64
-	blocks_per_segment int
+	bds   []BlockDescriptor
+	size  uint64
+	index uint64
 }
 
-func NewCacheMap(blocks uint64, blocks_per_segment int) *CacheMap {
+func NewCacheMap(blocks uint64) *CacheMap {
 
-	if 0 == blocks {
-		return nil
-	}
+	godbc.Require(blocks > 0)
 
-	b := &CacheMap{}
+	c := &CacheMap{}
 
-	b.size = blocks
-	b.blocks_per_segment = blocks_per_segment
+	c.size = blocks
+	c.bds = make([]BlockDescriptor, blocks)
 
-	// Initialize addressmap
-	InitAddressmap(&b.addressmap)
-
-	// Initialize segments
-	b.segments = make([]Segment, blocks)
-	for s := 0; s < len(b.segments); s++ {
-		InitSegment(&b.segments[s], blocks_per_segment)
-	}
-
-	return b
+	return c
 }
 
-func (c *CacheMap) segment_from_index(index uint64) (segment uint64, block int) {
+func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
+	for {
+
+		// Use the current index to check the current entry
+		for ; c.index < c.size; c.index++ {
+			entry := &c.bds[c.index]
+
+			// CLOCK: If it has been used recently, then do not evict
+			if entry.mru {
+				entry.mru = false
+			} else {
+
+				// If it is in use, then we need to evict the older key
+				if entry.used {
+					evictkey = entry.key
+					evict = true
+				} else {
+					evictkey = INVALID_KEY
+					evict = false
+				}
+
+				// Set return values
+				newindex = c.index
+
+				// Setup current cachemap entry
+				entry.key = key
+				entry.mru = false
+				entry.used = true
+
+				// Set index to next cachemap entry
+				c.index++
+
+				return
+			}
+		}
+		c.index = 0
+	}
+}
+
+func (c *CacheMap) Using(index uint64) {
+	c.bds[index].mru = true
+}
+
+func (c *CacheMap) Free(index uint64) {
+	c.bds[index].mru = false
+	c.bds[index].used = false
+	c.bds[index].key = INVALID_KEY
+}
+
+/*
+func (c *CacheMap) segment_from_index(index uint64) (segment uint64, entry int) {
 	segment = index / uint64(c.blocks_per_segment)
 	block = int(index % uint64(c.blocks_per_segment))
 	return
@@ -120,3 +170,5 @@ func (c *CacheMap) Get(address uint64) (index uint64, found bool) {
 func (c *CacheMap) Set(address, index uint64) {
 	c.addressmap.Set(address, index)
 }
+
+*/

@@ -15,6 +15,8 @@
 //
 package cache
 
+/*
+
 import (
 	"runtime"
 	"testing"
@@ -91,3 +93,5 @@ func BenchmarkGet(b *testing.B) {
 		a.Get(ui)
 	}
 }
+
+*/
