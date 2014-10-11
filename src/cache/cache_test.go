@@ -35,13 +35,13 @@ func assert(t *testing.T, b bool) {
 }
 
 func TestNewCache(t *testing.T) {
-	c := NewCache(4096, true, 512)
+	c := NewCache(8)
 	assert(t, c != nil)
 	c.Close()
 }
 
 func TestCacheSimple(t *testing.T) {
-	c := NewCache(4096, true, 512)
+	c := NewCache(8)
 	assert(t, c != nil)
 
 	here := make(chan *message.MsgIo)

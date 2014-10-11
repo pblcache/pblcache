@@ -122,5 +122,4 @@ func TestEvictions(t *testing.T) {
 	assert(t, index == 0)
 	assert(t, evictkey == id1)
 	assert(t, evict == true)
-
 }

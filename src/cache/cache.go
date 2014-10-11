@@ -25,35 +25,26 @@ import (
 )
 
 type Cache struct {
-	stats        *CacheStats
-	cachemap     *CacheMap
-	addressmap   map[uint64]uint64
-	blocksize    uint64
-	cachesize    uint64
-	blocks       uint64
-	writethrough bool
-	Iochan       chan *message.MsgIo
-	Msgchan      chan *message.Message
-	quitchan     chan struct{}
-	wg           sync.WaitGroup
+	stats      *CacheStats
+	cachemap   *CacheMap
+	addressmap map[uint64]uint64
+	blocks     uint64
+	Iochan     chan *message.MsgIo
+	Msgchan    chan *message.Message
+	quitchan   chan struct{}
+	wg         sync.WaitGroup
 }
 
 var (
 	ErrNotFound = errors.New("Block not found")
 )
 
-// cachesize is in bytes
-// blocksize is in bytes
-func NewCache(cachesize uint64, writethrough bool, blocksize uint64) *Cache {
+func NewCache(blocks uint64) *Cache {
 
-	godbc.Require(cachesize > 0)
-	godbc.Require(blocksize > 0)
+	godbc.Require(blocks > 0)
 
 	cache := &Cache{}
-	cache.blocks = cachesize / blocksize
-	cache.cachesize = cachesize
-	cache.blocksize = blocksize
-	cache.writethrough = writethrough
+	cache.blocks = blocks
 
 	cache.stats = NewCacheStats()
 	cache.cachemap = NewCacheMap(cache.blocks)
