@@ -79,6 +79,7 @@ func (c *Cache) server() {
 			case iomsg := <-c.Iochan:
 				// Do io channel
 				// EMPTY ON QUIT!
+				iomsg.Err = nil
 				switch iomsg.Type {
 				case message.MsgPut:
 					// PUT
@@ -87,7 +88,6 @@ func (c *Cache) server() {
 					// Get
 					if index, ok := c.get(iomsg.Offset); ok {
 						iomsg.BlockNum = index
-						iomsg.Err = nil
 					} else {
 						iomsg.Err = ErrNotFound
 					}
