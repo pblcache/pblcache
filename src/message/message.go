@@ -16,9 +16,7 @@
 package message
 
 import (
-	"fmt"
 	"github.com/lpabon/godbc"
-	"github.com/lpabon/tm"
 	"time"
 )
 
@@ -38,8 +36,7 @@ const (
 )
 
 type MessageStats struct {
-	start    time.Time
-	Duration tm.TimeDuration
+	start time.Time
 }
 
 type Message struct {
@@ -54,12 +51,8 @@ func (m *Message) TimeStart() {
 	m.Stats.start = time.Now()
 }
 
-func (m *Message) TimeStop() {
-	m.Stats.Duration.Add(time.Now().Sub(m.Stats.start))
-}
-
-func (m *Message) String() string {
-	return fmt.Sprintf("Duration %.2f usecs\n", m.Stats.Duration.MeanTimeUsecs())
+func (m *Message) TimeElapsed() time.Duration {
+	return time.Now().Sub(m.Stats.start)
 }
 
 func (m *Message) Done() {

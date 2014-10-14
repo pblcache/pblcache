@@ -74,7 +74,19 @@ func (c *Cache) server() {
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
+
+		emptychan := false
 		for {
+
+			// Check if we have been signaled through <-quit
+			// If we have, we now know that as soon as the
+			// message channel is empty, we can quit.
+			if emptychan {
+				if len(c.Iochan) == 0 && len(c.Msgchan) == 0 {
+					break
+				}
+			}
+
 			select {
 			case iomsg := <-c.Iochan:
 				// Do io channel
@@ -93,7 +105,9 @@ func (c *Cache) server() {
 					}
 
 				case message.MsgInvalidate:
-					c.invalidate(iomsg.Offset)
+					if ok := c.invalidate(iomsg.Offset); !ok {
+						iomsg.Err = ErrNotFound
+					}
 
 					// case Release
 				}
@@ -104,19 +118,23 @@ func (c *Cache) server() {
 			case <-c.quitchan:
 				// :TODO: Ok for now, but we cannot just quit
 				// We need to empty the Iochan
-				return
+				emptychan = true
 			}
 		}
 	}()
 }
 
-func (c *Cache) invalidate(key uint64) {
+func (c *Cache) invalidate(key uint64) bool {
 	if index, ok := c.addressmap[key]; ok {
 		c.stats.invalidations++
 
 		c.cachemap.Free(index)
 		delete(c.addressmap, key)
+
+		return true
 	}
+
+	return false
 }
 
 func (c *Cache) set(key uint64) (index uint64) {

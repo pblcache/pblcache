@@ -16,6 +16,7 @@
 package message
 
 import (
+	"github.com/lpabon/tm"
 	"runtime"
 	"testing"
 )
@@ -34,15 +35,15 @@ func assert(t *testing.T, b bool) {
 }
 
 func TestTime(t *testing.T) {
+	var td tm.TimeDuration
 	m := &Message{}
 	for i := 0; i < 100; i++ {
 		m.TimeStart()
 		for j := 0; j < 10000; j++ {
 		}
-		m.TimeStop()
+		td.Add(m.TimeElapsed())
 	}
-	assert(t, m.Stats.Duration.MeanTimeUsecs() > 0)
-	assert(t, "" != m.String())
+	assert(t, td.MeanTimeUsecs() > 0)
 }
 
 type Data struct {
