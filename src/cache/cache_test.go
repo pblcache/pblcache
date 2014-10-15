@@ -49,61 +49,66 @@ func TestCacheSimple(t *testing.T) {
 	c := NewCache(8)
 	assert(t, c != nil)
 
-	here := make(chan *message.MsgIo)
-	m := message.NewMsgIO(message.MsgPut)
-	m.Offset = 1
+	here := make(chan *message.Message)
+	m := message.NewMsgPut()
 	m.RetChan = here
+	io := m.IoPkt()
+	io.Offset = 1
 
 	// First Put
-	c.Iochan <- m
+	c.Msgchan <- m
 	<-here
-	assert(t, m.BlockNum == 0)
+	assert(t, io.BlockNum == 0)
 
-	val, ok := c.addressmap[m.Offset]
+	val, ok := c.addressmap[io.Offset]
 	assert(t, val == 0)
 	assert(t, ok == true)
 
 	// Insert again.  Should allocate
 	// next block
-	c.Iochan <- m
+	c.Msgchan <- m
 	<-here
-	assert(t, m.BlockNum == 1)
+	assert(t, io.BlockNum == 1)
 	assert(t, m.Err == nil)
 
-	val, ok = c.addressmap[m.Offset]
+	val, ok = c.addressmap[io.Offset]
 	assert(t, val == 1)
 	assert(t, ok == true)
 
 	// Send a Get
-	mg := message.NewMsgIO(message.MsgGet)
-	mg.Offset = 1
+	mg := message.NewMsgGet()
+	io = mg.IoPkt()
+	io.Offset = 1
 	mg.RetChan = here
-	c.Iochan <- mg
+	c.Msgchan <- mg
 	<-here
-	assert(t, mg.BlockNum == 1)
+	assert(t, io.BlockNum == 1)
 	assert(t, mg.Err == nil)
 
 	// Send Invalidate
-	mi := message.NewMsgIO(message.MsgInvalidate)
-	mi.Offset = 1
+	mi := message.NewMsgInvalidate()
+	io = mi.IoPkt()
+	io.Offset = 1
 	mi.RetChan = here
-	c.Iochan <- mi
+	c.Msgchan <- mi
 	<-here
 	assert(t, mi.Err == nil)
 
 	// Send Invalidate
-	mi = message.NewMsgIO(message.MsgInvalidate)
-	mi.Offset = 1
+	mi = message.NewMsgInvalidate()
+	io = mi.IoPkt()
+	io.Offset = 1
 	mi.RetChan = here
-	c.Iochan <- mi
+	c.Msgchan <- mi
 	<-here
 	assert(t, mi.Err == ErrNotFound)
 
 	// Send a Get again, but it should not be there
-	mg = message.NewMsgIO(message.MsgGet)
-	mg.Offset = 1
+	mg = message.NewMsgGet()
+	io = mg.IoPkt()
+	io.Offset = 1
 	mg.RetChan = here
-	c.Iochan <- mg
+	c.Msgchan <- mg
 	<-here
 	assert(t, mg.Err == ErrNotFound)
 
@@ -112,7 +117,7 @@ func TestCacheSimple(t *testing.T) {
 
 func response_handler(wg *sync.WaitGroup,
 	quit chan struct{},
-	m chan *message.MsgIo) {
+	m chan *message.Message) {
 
 	var (
 		gethits, getmisses, puts, invalidatehits, invalidatemisses int
@@ -180,7 +185,7 @@ func TestConcurrency(t *testing.T) {
 	c := NewCache(300)
 
 	// Start up response server
-	returnch := make(chan *message.MsgIo, 100)
+	returnch := make(chan *message.Message, 100)
 	quit := make(chan struct{})
 	wgRet.Add(1)
 	go response_handler(&wgRet, quit, returnch)
@@ -194,23 +199,24 @@ func TestConcurrency(t *testing.T) {
 
 			// Each client to send 1k IOs
 			for io := 0; io < 1000; io++ {
-				var msg *message.MsgIo
+				var msg *message.Message
 				switch r.Intn(3) {
 				case 0:
-					msg = message.NewMsgIO(message.MsgGet)
+					msg = message.NewMsgGet()
 				case 1:
-					msg = message.NewMsgIO(message.MsgPut)
+					msg = message.NewMsgPut()
 				case 2:
-					msg = message.NewMsgIO(message.MsgInvalidate)
+					msg = message.NewMsgInvalidate()
 				}
+				iopkt := msg.IoPkt()
 
 				// Maximum "disk" size is 10 times bigger than cache
-				msg.Offset = uint64(r.Int63n(3000))
+				iopkt.Offset = uint64(r.Int63n(3000))
 				msg.RetChan = returnch
 
 				// Send request
 				msg.TimeStart()
-				c.Iochan <- msg
+				c.Msgchan <- msg
 
 				// Simulate waiting for more work by sleeping
 				// anywhere from 100usecs to 10ms

@@ -19,35 +19,57 @@ import (
 	"testing"
 )
 
-func TestMsgIo(t *testing.T) {
-	c := make(chan *MsgIo)
-	m := NewMsgIO(MsgGet)
+func TestGetIoPkt(t *testing.T) {
+	c := make(chan *Message)
+	m := NewMsgGet()
 	m.RetChan = c
-	assert(t, m.BlockNum == 0)
-	assert(t, m.Buffer == nil)
-	assert(t, m.Offset == 0)
-	assert(t, m.Obj == 0)
-	assert(t, m.Message.RetChan == nil)
+	iopkt := m.IoPkt()
+	assert(t, iopkt.BlockNum == 0)
+	assert(t, iopkt.Buffer == nil)
+	assert(t, iopkt.Offset == 0)
+	assert(t, iopkt.Obj == 0)
 	assert(t, m.RetChan == c)
+	assert(t, m.Type == MsgGet)
+}
+
+func TestPutIoPkt(t *testing.T) {
+	c := make(chan *Message)
+	m := NewMsgPut()
+	m.RetChan = c
+	iopkt := m.IoPkt()
+	assert(t, iopkt.BlockNum == 0)
+	assert(t, iopkt.Buffer == nil)
+	assert(t, iopkt.Offset == 0)
+	assert(t, iopkt.Obj == 0)
+	assert(t, m.RetChan == c)
+	assert(t, m.Type == MsgPut)
+}
+
+func TestInvalidateIoPkt(t *testing.T) {
+	c := make(chan *Message)
+	m := NewMsgInvalidate()
+	m.RetChan = c
+	iopkt := m.IoPkt()
+	assert(t, iopkt.BlockNum == 0)
+	assert(t, iopkt.Buffer == nil)
+	assert(t, iopkt.Offset == 0)
+	assert(t, iopkt.Obj == 0)
+	assert(t, m.RetChan == c)
+	assert(t, m.Type == MsgInvalidate)
 }
 
 func TestMsgIoDone(t *testing.T) {
 
 	// Channel to send
-	worker := make(chan *MsgIo)
+	worker := make(chan *Message)
 
 	// Return channel
-	backhere := make(chan *MsgIo)
+	backhere := make(chan *Message)
 
-	m := &MsgIo{
-		RetChan: backhere,
-		Message: Message{
-			Type: MsgPut,
-
-			// Create some private data
-			Priv: &Data{i: 1},
-		},
-	}
+	// Message
+	m := NewMsgPut()
+	m.Priv = &Data{i: 1}
+	m.RetChan = backhere
 
 	// Start 'work' service
 	go func() {
@@ -55,7 +77,8 @@ func TestMsgIoDone(t *testing.T) {
 		// Wait for work
 		msg := <-worker
 		d := msg.Priv.(*Data)
-		msg.Buffer = []byte("TESTSTRING")
+		io := msg.IoPkt()
+		io.Buffer = []byte("TESTSTRING")
 		assert(t, msg.Type == MsgPut)
 		assert(t, d.i == 1)
 
@@ -73,14 +96,11 @@ func TestMsgIoDone(t *testing.T) {
 	// Wait until it is done
 	rm := <-backhere
 
-	// Get the priv data
+	// Get the data
 	newD := rm.Priv.(*Data)
+	io := rm.IoPkt()
 
 	// Check results
 	assert(t, newD.i == 2)
-	assert(t, string(rm.Buffer) == "TESTSTRING")
-
-	// Cleanup
-	close(worker)
-	close(backhere)
+	assert(t, string(io.Buffer) == "TESTSTRING")
 }

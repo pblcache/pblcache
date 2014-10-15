@@ -29,7 +29,6 @@ type Cache struct {
 	cachemap   *CacheMap
 	addressmap map[uint64]uint64
 	blocks     uint64
-	Iochan     chan *message.MsgIo
 	Msgchan    chan *message.Message
 	quitchan   chan struct{}
 	wg         sync.WaitGroup
@@ -50,8 +49,7 @@ func NewCache(blocks uint64) *Cache {
 	cache.cachemap = NewCacheMap(cache.blocks)
 	cache.addressmap = make(map[uint64]uint64)
 
-	cache.Iochan = make(chan *message.MsgIo, 128)
-	cache.Msgchan = make(chan *message.Message, 128)
+	cache.Msgchan = make(chan *message.Message, 256)
 	cache.quitchan = make(chan struct{})
 
 	godbc.Ensure(cache.blocks > 0)
@@ -82,39 +80,36 @@ func (c *Cache) server() {
 			// If we have, we now know that as soon as the
 			// message channel is empty, we can quit.
 			if emptychan {
-				if len(c.Iochan) == 0 && len(c.Msgchan) == 0 {
+				if len(c.Msgchan) == 0 {
 					break
 				}
 			}
 
 			select {
-			case iomsg := <-c.Iochan:
-				// Do io channel
-				// EMPTY ON QUIT!
-				iomsg.Err = nil
-				switch iomsg.Type {
+			case msg := <-c.Msgchan:
+				msg.Err = nil
+				io := msg.IoPkt()
+				switch msg.Type {
 				case message.MsgPut:
 					// PUT
-					iomsg.BlockNum = c.set(iomsg.Offset)
+					io.BlockNum = c.set(io.Offset)
 				case message.MsgGet:
 					// Get
-					if index, ok := c.get(iomsg.Offset); ok {
-						iomsg.BlockNum = index
+					if index, ok := c.get(io.Offset); ok {
+						io.BlockNum = index
 					} else {
-						iomsg.Err = ErrNotFound
+						msg.Err = ErrNotFound
 					}
 
 				case message.MsgInvalidate:
-					if ok := c.invalidate(iomsg.Offset); !ok {
-						iomsg.Err = ErrNotFound
+					if ok := c.invalidate(io.Offset); !ok {
+						msg.Err = ErrNotFound
 					}
 
 					// case Release
 				}
 
-				iomsg.Done()
-			case <-c.Msgchan:
-				// Do simple command
+				msg.Done()
 			case <-c.quitchan:
 				// :TODO: Ok for now, but we cannot just quit
 				// We need to empty the Iochan

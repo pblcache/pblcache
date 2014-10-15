@@ -15,11 +15,7 @@
 //
 package message
 
-import (
-	"github.com/lpabon/godbc"
-)
-
-type MsgIo struct {
+type IoPkt struct {
 	// Object descriptor
 	Obj uint16
 
@@ -32,24 +28,27 @@ type MsgIo struct {
 	// Block number on the Log to read
 	// from or write to
 	BlockNum uint64
-
-	// Return pointer to MsgIo
-	RetChan chan *MsgIo
-
-	// Contains Message
-	Message
 }
 
-func NewMsgIO(msgtype MsgType) *MsgIo {
-	return &MsgIo{
-		Message: Message{
-			Type: msgtype,
-		},
+func newio(msgtype MsgType) *Message {
+	return &Message{
+		Type: msgtype,
+		Pkg:  &IoPkt{},
 	}
 }
 
-// Override Message Done function
-func (m *MsgIo) Done() {
-	godbc.Require(m.RetChan != nil)
-	m.RetChan <- m
+func NewMsgGet() *Message {
+	return newio(MsgGet)
+}
+
+func NewMsgPut() *Message {
+	return newio(MsgPut)
+}
+
+func NewMsgInvalidate() *Message {
+	return newio(MsgInvalidate)
+}
+
+func (m *Message) IoPkt() *IoPkt {
+	return m.Pkg.(*IoPkt)
 }

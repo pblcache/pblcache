@@ -41,10 +41,11 @@ type MessageStats struct {
 
 type Message struct {
 	Type    MsgType
-	Stats   MessageStats
+	Pkg     interface{}
 	Priv    interface{}
-	Err     error
 	RetChan chan *Message
+	Err     error
+	Stats   MessageStats
 }
 
 func (m *Message) TimeStart() {
