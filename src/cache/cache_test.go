@@ -231,7 +231,7 @@ func TestConcurrency(t *testing.T) {
 
 	// Send receiver a message that all clients have shut down
 	c.Close()
-	quit <- struct{}{}
+	close(quit)
 
 	// Wait for receiver to finish emptying its channel
 	wgRet.Wait()

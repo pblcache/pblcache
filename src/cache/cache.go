@@ -49,7 +49,7 @@ func NewCache(blocks uint64) *Cache {
 	cache.cachemap = NewCacheMap(cache.blocks)
 	cache.addressmap = make(map[uint64]uint64)
 
-	cache.Msgchan = make(chan *message.Message, 256)
+	cache.Msgchan = make(chan *message.Message, 32)
 	cache.quitchan = make(chan struct{})
 
 	godbc.Ensure(cache.blocks > 0)
