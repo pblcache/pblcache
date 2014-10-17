@@ -136,4 +136,5 @@ func TestReadCorrectness(t *testing.T) {
 	}
 
 	l.Close()
+	os.Remove(testcachefile)
 }
