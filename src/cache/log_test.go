@@ -17,7 +17,6 @@
 package cache
 
 import (
-	"fmt"
 	"github.com/pblcache/pblcache/src/message"
 	"os"
 	"testing"
@@ -51,7 +50,7 @@ func TestNewLog(t *testing.T) {
 // Should wrap four times
 func TestWrapPut(t *testing.T) {
 	// Simple log
-	blocks := uint64(4)
+	blocks := uint64(16)
 	l, logblocks := NewLog(testcachefile, blocks, 4096, 2, 4096*2)
 	assert(t, l != nil)
 	assert(t, blocks == logblocks)
@@ -77,4 +76,64 @@ func TestWrapPut(t *testing.T) {
 	l.Close()
 	assert(t, l.stats.wraps == wraps)
 	os.Remove(testcachefile)
+}
+
+func TestReadCorrectness(t *testing.T) {
+	// Simple log
+	blocks := uint64(240)
+	bs := uint64(4096)
+	blocks_per_segment := uint64(2)
+	buffercache := uint64(4096 * 10)
+	l, logblocks := NewLog(testcachefile,
+		blocks,
+		bs,
+		blocks_per_segment,
+		buffercache)
+	assert(t, l != nil)
+	assert(t, blocks == logblocks)
+
+	here := make(chan *message.Message)
+	for io := uint8(0); io < uint8(blocks); io++ {
+		buf := make([]byte, 4096)
+		buf[0] = byte(io)
+
+		msg := message.NewMsgPut()
+		msg.RetChan = here
+
+		iopkt := msg.IoPkt()
+		iopkt.Buffer = buf
+		iopkt.BlockNum = uint64(io)
+
+		l.Msgchan <- msg
+		<-here
+	}
+	buf := make([]byte, 4096)
+	msg := message.NewMsgGet()
+	msg.RetChan = here
+
+	iopkt := msg.IoPkt()
+	iopkt.Buffer = buf
+	iopkt.BlockNum = blocks - 1
+
+	l.Msgchan <- msg
+	<-here
+
+	assert(t, buf[0] == uint8(blocks-1))
+
+	for io := uint8(0); io < uint8(blocks); io++ {
+		buf := make([]byte, 4096)
+		msg := message.NewMsgGet()
+		msg.RetChan = here
+
+		iopkt := msg.IoPkt()
+		iopkt.Buffer = buf
+		iopkt.BlockNum = uint64(io)
+
+		l.Msgchan <- msg
+		<-here
+
+		assert(t, buf[0] == uint8(io))
+	}
+
+	l.Close()
 }

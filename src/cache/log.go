@@ -442,7 +442,7 @@ func (c *Log) put(msg *message.Message) error {
 	offset := c.offset(iopkt.BlockNum)
 
 	// Buffer cache is a Read-miss cache
-	c.bc.Invalidate(iopkt.BlockNum)
+	//c.bc.Invalidate(iopkt.BlockNum)
 
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
@@ -465,11 +465,13 @@ func (c *Log) get(msg *message.Message) error {
 	iopkt := msg.IoPkt()
 	offset := c.offset(iopkt.BlockNum)
 
-	err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
-	if err == nil {
-		c.stats.BufferHit()
-		return nil
-	}
+	/*
+		err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
+		if err == nil {
+			c.stats.BufferHit()
+			return nil
+		}
+	*/
 
 	// Check if the data is in RAM.  Go through each buffered segment
 	for i := 0; i < c.segmentbuffers; i++ {
@@ -489,7 +491,7 @@ func (c *Log) get(msg *message.Message) error {
 			c.segments[i].lock.RUnlock()
 
 			// Save in buffer cache
-			c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
+			//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
 			msg.Done()
 
 			return nil
