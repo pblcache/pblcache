@@ -52,7 +52,6 @@ func init() {
 type IoSegment struct {
 	segmentbuf []byte
 	data       *bufferio.BufferIO
-	meta       *bufferio.BufferIO
 	offset     uint64
 	written    bool
 	lock       sync.RWMutex
@@ -182,15 +181,14 @@ type Log struct {
 	logreaders     chan *message.Message
 }
 
-func NewLog(dbpath string, blocks, blocksize, segmentsize, bcsize uint64) (*Log, uint64) {
+func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64) (*Log, uint64) {
 
 	var err error
 
 	db := &Log{}
 	db.stats = NewIoStats()
 	db.blocksize = blocksize
-	db.segmentsize = segmentsize
-	db.segmentbuffers = fsegmentbuffers
+	db.segmentsize = blocks_per_segment * blocksize
 	db.maxentries = db.segmentsize / db.blocksize
 
 	// We have to make sure that the number of blocks requested
@@ -199,6 +197,11 @@ func NewLog(dbpath string, blocks, blocksize, segmentsize, bcsize uint64) (*Log,
 	db.blocks = db.numsegments * db.maxentries
 	db.size = db.numsegments * db.segmentsize
 
+	if db.numsegments < fsegmentbuffers {
+		db.segmentbuffers = int(db.numsegments)
+	} else {
+		db.segmentbuffers = fsegmentbuffers
+	}
 	godbc.Check(db.numsegments != 0,
 		fmt.Sprintf("bs:%v ssize:%v sbuffers:%v blocks:%v max:%v ns:%v size:%v\n",
 			db.blocksize, db.segmentsize, db.segmentbuffers, db.blocks,
@@ -228,11 +231,11 @@ func NewLog(dbpath string, blocks, blocksize, segmentsize, bcsize uint64) (*Log,
 		db.segments[i].data = bufferio.NewBufferIO(db.segments[i].segmentbuf)
 
 		// Fill ch available with all the available buffers
-		db.chavailable <- &db.segments[i]
+		db.chreader <- &db.segments[i]
 	}
 
 	// Set up the first available segment
-	db.segment = <-db.chavailable
+	db.segment = <-db.chreader
 
 	// Open the storage device
 	os.Remove(dbpath)
@@ -263,8 +266,8 @@ func NewLog(dbpath string, blocks, blocksize, segmentsize, bcsize uint64) (*Log,
 	godbc.Ensure(db.chavailable != nil)
 	godbc.Ensure(db.chreader != nil)
 	godbc.Ensure(db.segmentbuffers == len(db.segments))
-	godbc.Ensure((db.segmentbuffers - 1) == len(db.chavailable))
-	godbc.Ensure(0 == len(db.chreader))
+	godbc.Ensure(db.segmentbuffers-1 == len(db.chreader))
+	godbc.Ensure(0 == len(db.chavailable))
 	godbc.Ensure(0 == len(db.chwriting))
 	godbc.Ensure(nil != db.segment)
 
@@ -332,7 +335,9 @@ func (c *Log) server() {
 		}
 
 		// We are closing the log.  Need to shut down the channels
-		c.sync()
+		if c.segment.written {
+			c.sync()
+		}
 		close(c.chwriting)
 		close(c.logreaders)
 
@@ -424,30 +429,29 @@ func (c *Log) inRange(index uint64, s *IoSegment) bool {
 func (c *Log) put(msg *message.Message) error {
 
 	iopkt := msg.IoPkt()
+	godbc.Require(iopkt.BlockNum < c.blocks)
 
+	// Make sure the block number curresponds to the
+	// current segment.  If not, c.sync() will place
+	// the next available segment into c.segment
 	for !c.inRange(iopkt.BlockNum, c.segment) {
 		c.sync()
 	}
 
+	// get log offset
 	offset := c.offset(iopkt.BlockNum)
-
-	/*
-		godbc.Require(c.inRange(iopkt.BlockNum, c.segment),
-			fmt.Sprintf("[%v - %v - %v]",
-				c.segment.offset,
-				offset,
-				c.segment.offset+c.segmentinfo.datasize))
-	*/
 
 	// Buffer cache is a Read-miss cache
 	c.bc.Invalidate(iopkt.BlockNum)
 
+	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
 	godbc.Check(n == len(iopkt.Buffer))
 	godbc.Check(err == nil)
 
 	c.segment.written = true
 
+	// We have written the data, and we are done with the message
 	msg.Done()
 
 	return err

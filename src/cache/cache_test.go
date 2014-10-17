@@ -36,6 +36,7 @@ func assert(t *testing.T, b bool) {
 			pc,
 			file,
 			line)
+		t.FailNow()
 	}
 }
 

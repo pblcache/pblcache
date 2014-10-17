@@ -17,6 +17,8 @@
 package cache
 
 import (
+	"fmt"
+	"github.com/pblcache/pblcache/src/message"
 	"os"
 	"testing"
 )
@@ -28,7 +30,7 @@ const (
 func TestNewLog(t *testing.T) {
 
 	// Simple log
-	l, blocks := NewLog(testcachefile, 16, 4096, 4096*4, 4096*2)
+	l, blocks := NewLog(testcachefile, 16, 4096, 4, 4096*2)
 	assert(t, l != nil)
 	assert(t, blocks == 16)
 	l.Close()
@@ -37,11 +39,42 @@ func TestNewLog(t *testing.T) {
 	// blocks that are aligned to the segments.
 	// 17 blocks are not aligned to a segment with 4 blocks
 	// per segment
-	l, blocks = NewLog(testcachefile, 17, 4096, 4096*4, 4096*2)
+	l, blocks = NewLog(testcachefile, 17, 4096, 4, 4096*2)
 	assert(t, l != nil)
 	assert(t, blocks == 16)
 	l.Close()
 
 	// Cleanup
+	os.Remove(testcachefile)
+}
+
+// Should wrap four times
+func TestWrapPut(t *testing.T) {
+	// Simple log
+	blocks := uint64(4)
+	l, logblocks := NewLog(testcachefile, blocks, 4096, 2, 4096*2)
+	assert(t, l != nil)
+	assert(t, blocks == logblocks)
+
+	here := make(chan *message.Message)
+	wraps := uint64(4)
+	for io := uint8(0); io < uint8(blocks*wraps); io++ {
+		buf := make([]byte, 4096)
+		buf[0] = byte(io)
+
+		msg := message.NewMsgPut()
+		msg.RetChan = here
+
+		iopkt := msg.IoPkt()
+		iopkt.Buffer = buf
+		iopkt.BlockNum = uint64(io % uint8(blocks))
+
+		l.Msgchan <- msg
+		<-here
+	}
+
+	// Cleanup
+	l.Close()
+	assert(t, l.stats.wraps == wraps)
 	os.Remove(testcachefile)
 }
