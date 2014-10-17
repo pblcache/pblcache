@@ -248,17 +248,6 @@ func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64)
 	}
 	godbc.Check(err == nil)
 
-	// Start reader goroutines
-	for i := 0; i < 32; i++ {
-		db.wg.Add(1)
-		go db.logread()
-	}
-
-	// Start goroutines
-	db.server()
-	db.writer()
-	db.reader()
-
 	godbc.Ensure(db.size != 0)
 	godbc.Ensure(db.blocksize == uint64(blocksize))
 	godbc.Ensure(db.Msgchan != nil)
@@ -270,6 +259,16 @@ func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64)
 	godbc.Ensure(0 == len(db.chavailable))
 	godbc.Ensure(0 == len(db.chwriting))
 	godbc.Ensure(nil != db.segment)
+
+	// Now that we are sure everything is clean,
+	// we can start the goroutines
+	for i := 0; i < 32; i++ {
+		db.wg.Add(1)
+		go db.logread()
+	}
+	db.server()
+	db.writer()
+	db.reader()
 
 	// Return the log object to the caller.
 	// Also return the maximum number of blocks, which may
