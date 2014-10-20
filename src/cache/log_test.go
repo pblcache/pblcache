@@ -17,9 +17,14 @@
 package cache
 
 import (
+	"fmt"
+	"github.com/lpabon/tm"
 	"github.com/pblcache/pblcache/src/message"
+	"math/rand"
 	"os"
+	"sync"
 	"testing"
+	"time"
 )
 
 const (
@@ -137,4 +142,154 @@ func TestReadCorrectness(t *testing.T) {
 
 	l.Close()
 	os.Remove(testcachefile)
+}
+
+func logtest_response_handler(
+	t *testing.T,
+	wg *sync.WaitGroup,
+	quit chan struct{},
+	m chan *message.Message) {
+
+	var (
+		gets, puts int
+		tg, tp     tm.TimeDuration
+	)
+
+	defer wg.Done()
+
+	emptychan := false
+	for {
+
+		// Check if we have been signaled through <-quit
+		// If we have, we now know that as soon as the
+		// message channel is empty, we can quit.
+		if emptychan {
+			if len(m) == 0 {
+				break
+			}
+		}
+
+		// Check incoming channels
+		select {
+		case msg := <-m:
+			// Collect stats
+			switch msg.Type {
+			case message.MsgGet:
+				gets++
+				tg.Add(msg.TimeElapsed())
+			case message.MsgPut:
+				puts++
+				tp.Add(msg.TimeElapsed())
+			}
+
+		case <-quit:
+			emptychan = true
+		}
+	}
+	fmt.Printf("Gets:%d, Puts:%d\n"+
+		"Mean times in usecs: Gets:%.2f, Puts:%.2f\n",
+		gets, puts, tg.MeanTimeUsecs(), tp.MeanTimeUsecs())
+}
+
+func TestLogConcurrency(t *testing.T) {
+	// Simple log
+	blocks := uint64(240)
+	bs := uint64(4096)
+	blocks_per_segment := uint64(2)
+	buffercache := uint64(4096 * 10)
+	l, logblocks := NewLog(testcachefile,
+		blocks,
+		bs,
+		blocks_per_segment,
+		buffercache)
+	assert(t, l != nil)
+	assert(t, blocks == logblocks)
+
+	here := make(chan *message.Message)
+
+	// Fill the log
+	for io := uint8(0); io < uint8(blocks); io++ {
+		buf := make([]byte, 4096)
+		buf[0] = byte(io)
+
+		msg := message.NewMsgPut()
+		msg.RetChan = here
+
+		iopkt := msg.IoPkt()
+		iopkt.Buffer = buf
+		iopkt.BlockNum = uint64(io)
+
+		l.Msgchan <- msg
+		<-here
+	}
+
+	var wgIo, wgRet sync.WaitGroup
+
+	// Start up response server
+	returnch := make(chan *message.Message, 100)
+	quit := make(chan struct{})
+	wgRet.Add(1)
+	go logtest_response_handler(t, &wgRet, quit, returnch)
+
+	// Create 100 readers
+	for i := 0; i < 100; i++ {
+		wgIo.Add(1)
+		go func() {
+			defer wgIo.Done()
+			r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+			// Each client to send 1k IOs
+			for io := 0; io < 1000; io++ {
+				msg := message.NewMsgGet()
+				iopkt := msg.IoPkt()
+				iopkt.Buffer = make([]byte, bs)
+
+				// Maximum "disk" size is 10 times bigger than cache
+				iopkt.BlockNum = uint64(r.Int63n(int64(blocks)))
+				msg.RetChan = returnch
+
+				// Send request
+				msg.TimeStart()
+				l.Msgchan <- msg
+
+				// Simulate waiting for more work by sleeping
+				// anywhere from 100usecs to 10ms
+				time.Sleep(time.Microsecond * time.Duration((r.Intn(10000) + 100)))
+			}
+		}()
+	}
+
+	// Fill the log
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for wrap := 0; wrap < 30; wrap++ {
+		for io := uint8(0); io < uint8(blocks); io++ {
+			buf := make([]byte, 4096)
+			buf[0] = byte(io)
+
+			msg := message.NewMsgPut()
+			msg.RetChan = here
+
+			iopkt := msg.IoPkt()
+			iopkt.Buffer = buf
+			iopkt.BlockNum = uint64(io)
+
+			l.Msgchan <- msg
+			<-here
+			time.Sleep(time.Microsecond * time.Duration((r.Intn(1000) + 100)))
+		}
+	}
+
+	// Wait for all clients to finish
+	wgIo.Wait()
+
+	// Send receiver a message that all clients have shut down
+	close(quit)
+
+	// Wait for receiver to finish emptying its channel
+	wgRet.Wait()
+
+	// Cleanup
+	l.Close()
+	os.Remove(testcachefile)
+
 }

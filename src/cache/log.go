@@ -298,7 +298,7 @@ func (c *Log) logread() {
 
 		// Save in buffer cache
 		//c.bc.Set(index, val)
-
+		fmt.Print(".")
 		m.Done()
 	}
 }
@@ -354,6 +354,7 @@ func (c *Log) writer() {
 				n, err := c.fp.WriteAt(s.segmentbuf, int64(s.offset))
 				end := time.Now()
 				s.written = false
+				fmt.Print("@")
 
 				c.stats.WriteTimeRecord(end.Sub(start))
 				godbc.Check(n == len(s.segmentbuf))
@@ -492,6 +493,7 @@ func (c *Log) get(msg *message.Message) error {
 			// Save in buffer cache
 			//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
 			msg.Done()
+			fmt.Print("*")
 
 			return nil
 		}
