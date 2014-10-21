@@ -248,6 +248,9 @@ func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64)
 	}
 	godbc.Check(err == nil)
 
+	err = syscall.Fallocate(int(db.fp.Fd()), 0, 0, int64(blocks*blocksize))
+	godbc.Check(err == nil)
+
 	godbc.Ensure(db.size != 0)
 	godbc.Ensure(db.blocksize == uint64(blocksize))
 	godbc.Ensure(db.Msgchan != nil)
@@ -285,20 +288,19 @@ func (c *Log) logread() {
 		offset := c.offset(iopkt.BlockNum)
 
 		// Read from storage
-		//start := time.Now()
+		start := time.Now()
 		n, err := c.fp.ReadAt(iopkt.Buffer, int64(offset))
-		//end := time.Now()
-		//-- c.stats.ReadTimeRecord(end.Sub(start))
+		end := time.Now()
+		c.stats.ReadTimeRecord(end.Sub(start))
 
 		godbc.Check(uint64(n) == c.blocksize,
 			fmt.Sprintf("Read %v expected %v from location %v index %v",
 				n, c.blocksize, offset, iopkt.BlockNum))
 		godbc.Check(err == nil)
-		//-- c.stats.StorageHit()
+		c.stats.StorageHit()
 
 		// Save in buffer cache
 		//c.bc.Set(index, val)
-		fmt.Print(".")
 		m.Done()
 	}
 }
@@ -354,7 +356,6 @@ func (c *Log) writer() {
 				n, err := c.fp.WriteAt(s.segmentbuf, int64(s.offset))
 				end := time.Now()
 				s.written = false
-				fmt.Print("@")
 
 				c.stats.WriteTimeRecord(end.Sub(start))
 				godbc.Check(n == len(s.segmentbuf))
@@ -442,7 +443,7 @@ func (c *Log) put(msg *message.Message) error {
 	offset := c.offset(iopkt.BlockNum)
 
 	// Buffer cache is a Read-miss cache
-	//c.bc.Invalidate(iopkt.BlockNum)
+	c.bc.Invalidate(iopkt.BlockNum)
 
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
@@ -465,13 +466,11 @@ func (c *Log) get(msg *message.Message) error {
 	iopkt := msg.IoPkt()
 	offset := c.offset(iopkt.BlockNum)
 
-	/*
-		err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
-		if err == nil {
-			c.stats.BufferHit()
-			return nil
-		}
-	*/
+	err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
+	if err == nil {
+		c.stats.BufferHit()
+		return nil
+	}
 
 	// Check if the data is in RAM.  Go through each buffered segment
 	for i := 0; i < c.segmentbuffers; i++ {
@@ -490,10 +489,11 @@ func (c *Log) get(msg *message.Message) error {
 
 			c.segments[i].lock.RUnlock()
 
-			// Save in buffer cache
-			//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
+			// Return message
 			msg.Done()
-			fmt.Print("*")
+
+			// Save in buffer cache
+			c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
 
 			return nil
 		}
@@ -520,6 +520,6 @@ func (c *Log) Close() {
 
 func (c *Log) String() string {
 	return fmt.Sprintf(
-		"== IoDB Information ==\n") +
+		"== Log Information ==\n") +
 		c.stats.String()
 }

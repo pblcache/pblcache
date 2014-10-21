@@ -196,7 +196,7 @@ func TestLogConcurrency(t *testing.T) {
 	blocks := uint64(240)
 	bs := uint64(4096)
 	blocks_per_segment := uint64(2)
-	buffercache := uint64(4096 * 10)
+	buffercache := uint64(4096 * 24)
 	l, logblocks := NewLog(testcachefile,
 		blocks,
 		bs,
@@ -259,7 +259,7 @@ func TestLogConcurrency(t *testing.T) {
 		}()
 	}
 
-	// Fill the log
+	// Write to the log while the readers are reading
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for wrap := 0; wrap < 30; wrap++ {
 		for io := uint8(0); io < uint8(blocks); io++ {
@@ -289,6 +289,7 @@ func TestLogConcurrency(t *testing.T) {
 	wgRet.Wait()
 
 	// Cleanup
+	fmt.Print(l)
 	l.Close()
 	os.Remove(testcachefile)
 
