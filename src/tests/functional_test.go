@@ -18,8 +18,8 @@ package functional
 import (
 	"fmt"
 	"github.com/lpabon/bufferio"
-	zipf "github.com/lpabon/foocsim/zipfworkload"
 	"github.com/lpabon/tm"
+	zipf "github.com/lpabon/zipfworkload"
 	"github.com/pblcache/pblcache/src/cache"
 	"github.com/pblcache/pblcache/src/message"
 	"math/rand"
@@ -164,11 +164,9 @@ func TestSimpleCache(t *testing.T) {
 				if isread {
 					msg = message.NewMsgGet()
 				} else {
-					/*
-						On a write the client would first
-						invalidate the block, write the data to the
-						storage device, then place it in the cache
-					*/
+					// On a write the client would first
+					// invalidate the block, write the data to the
+					// storage device, then place it in the cache
 					msg = message.NewMsgInvalidate()
 					iopkt := msg.IoPkt()
 					iopkt.Offset = offset
@@ -191,6 +189,9 @@ func TestSimpleCache(t *testing.T) {
 
 				iopkt := msg.IoPkt()
 				iopkt.Buffer = make([]byte, blocksize)
+
+				// Write the offset into the buffer so that we can
+				// check it on reads.
 				if !isread {
 					bio := bufferio.NewBufferIO(iopkt.Buffer)
 					bio.WriteDataLE(offset)
