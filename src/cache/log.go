@@ -208,7 +208,7 @@ func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64)
 			db.maxentries, db.numsegments, db.size))
 
 	// Create buffer cache
-	db.bc = buffercache.NewClockCache(bcsize, uint64(db.blocksize))
+	db.bc = buffercache.NewClockCache(bcsize, db.blocksize)
 
 	// Incoming message channel
 	db.Msgchan = make(chan *message.Message, 32)
@@ -252,7 +252,7 @@ func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64)
 	godbc.Check(err == nil)
 
 	godbc.Ensure(db.size != 0)
-	godbc.Ensure(db.blocksize == uint64(blocksize))
+	godbc.Ensure(db.blocksize == blocksize)
 	godbc.Ensure(db.Msgchan != nil)
 	godbc.Ensure(db.chwriting != nil)
 	godbc.Ensure(db.chavailable != nil)
