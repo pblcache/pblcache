@@ -248,8 +248,8 @@ func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64)
 	}
 	godbc.Check(err == nil)
 
-	err = syscall.Fallocate(int(db.fp.Fd()), 0, 0, int64(blocks*blocksize))
-	godbc.Check(err == nil)
+	//err = syscall.Fallocate(int(db.fp.Fd()), 0, 0, int64(blocks*blocksize))
+	//godbc.Check(err == nil)
 
 	godbc.Ensure(db.size != 0)
 	godbc.Ensure(db.blocksize == blocksize)
