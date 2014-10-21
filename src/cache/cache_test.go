@@ -41,13 +41,21 @@ func assert(t *testing.T, b bool) {
 }
 
 func TestNewCache(t *testing.T) {
-	c := NewCache(8)
+	nc := NewNullTerminator()
+	nc.Start()
+	defer nc.Close()
+
+	c := NewCache(8, nc.In)
 	assert(t, c != nil)
 	c.Close()
 }
 
 func TestCacheSimple(t *testing.T) {
-	c := NewCache(8)
+	nc := NewNullTerminator()
+	nc.Start()
+	defer nc.Close()
+
+	c := NewCache(8, nc.In)
 	assert(t, c != nil)
 
 	here := make(chan *message.Message)
@@ -183,7 +191,12 @@ func response_handler(wg *sync.WaitGroup,
 
 func TestConcurrency(t *testing.T) {
 	var wgIo, wgRet sync.WaitGroup
-	c := NewCache(300)
+
+	nc := NewNullTerminator()
+	nc.Start()
+	defer nc.Close()
+
+	c := NewCache(300, nc.In)
 
 	// Start up response server
 	returnch := make(chan *message.Message, 100)

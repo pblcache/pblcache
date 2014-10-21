@@ -30,6 +30,7 @@ type Cache struct {
 	addressmap map[uint64]uint64
 	blocks     uint64
 	Msgchan    chan *message.Message
+	pipeline   chan *message.Message
 	quitchan   chan struct{}
 	wg         sync.WaitGroup
 }
@@ -38,12 +39,14 @@ var (
 	ErrNotFound = errors.New("Block not found")
 )
 
-func NewCache(blocks uint64) *Cache {
+func NewCache(blocks uint64, pipeline chan *message.Message) *Cache {
 
 	godbc.Require(blocks > 0)
+	godbc.Require(pipeline != nil)
 
 	cache := &Cache{}
 	cache.blocks = blocks
+	cache.pipeline = pipeline
 
 	cache.stats = NewCacheStats()
 	cache.cachemap = NewCacheMap(cache.blocks)
@@ -93,23 +96,30 @@ func (c *Cache) server() {
 				case message.MsgPut:
 					// PUT
 					io.BlockNum = c.set(io.Offset)
+
+					// Send to next one in line
+					c.pipeline <- msg
 				case message.MsgGet:
 					// Get
 					if index, ok := c.get(io.Offset); ok {
 						io.BlockNum = index
+
+						// Send to next one in line
+						c.pipeline <- msg
 					} else {
 						msg.Err = ErrNotFound
+						msg.Done()
 					}
 
 				case message.MsgInvalidate:
 					if ok := c.invalidate(io.Offset); !ok {
 						msg.Err = ErrNotFound
 					}
+					msg.Done()
 
 					// case Release
 				}
 
-				msg.Done()
 			case <-c.quitchan:
 				// :TODO: Ok for now, but we cannot just quit
 				// We need to empty the Iochan
