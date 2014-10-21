@@ -14,27 +14,23 @@
 // limitations under the License.
 //
 
-package cache
-
-import (
-	"github.com/pblcache/pblcache/src/message"
-)
+package message
 
 type NullPipeline struct {
-	In  chan *message.Message
-	Out chan *message.Message
+	In  chan *Message
+	Out chan *Message
 }
 
-func NewNullPipeline(out chan *message.Message) *NullPipeline {
+func NewNullPipeline(out chan *Message) *NullPipeline {
 	return &NullPipeline{
-		In:  make(chan *message.Message, 32),
+		In:  make(chan *Message, 32),
 		Out: out,
 	}
 }
 
 func NewNullTerminator() *NullPipeline {
 	return &NullPipeline{
-		In:  make(chan *message.Message, 32),
+		In:  make(chan *Message, 32),
 		Out: nil,
 	}
 }

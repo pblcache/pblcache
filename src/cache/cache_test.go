@@ -41,7 +41,7 @@ func assert(t *testing.T, b bool) {
 }
 
 func TestNewCache(t *testing.T) {
-	nc := NewNullTerminator()
+	nc := message.NewNullTerminator()
 	nc.Start()
 	defer nc.Close()
 
@@ -51,7 +51,7 @@ func TestNewCache(t *testing.T) {
 }
 
 func TestCacheSimple(t *testing.T) {
-	nc := NewNullTerminator()
+	nc := message.NewNullTerminator()
 	nc.Start()
 	defer nc.Close()
 
@@ -192,7 +192,7 @@ func response_handler(wg *sync.WaitGroup,
 func TestConcurrency(t *testing.T) {
 	var wgIo, wgRet sync.WaitGroup
 
-	nc := NewNullTerminator()
+	nc := message.NewNullTerminator()
 	nc.Start()
 	defer nc.Close()
 
