@@ -73,7 +73,7 @@ type Log struct {
 	maxentries     uint64
 	fp             *os.File
 	wrapped        bool
-	stats          *LogStats
+	stats          *logstats
 	bc             buffercache.BufferCache
 	Msgchan        chan *message.Message
 	quitchan       chan struct{}
@@ -85,7 +85,7 @@ func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64
 	var err error
 
 	log := &Log{}
-	log.stats = NewLogStats()
+	log.stats = &logstats{}
 	log.blocksize = blocksize
 	log.segmentsize = blocks_per_segment * blocksize
 	log.maxentries = log.segmentsize / log.blocksize

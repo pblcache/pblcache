@@ -23,85 +23,102 @@ import (
 	"time"
 )
 
-type LogStats struct {
+type logstats struct {
 	ramhits         uint64
 	storagehits     uint64
 	wraps           uint64
 	seg_skipped     uint64
 	bufferhits      uint64
 	totalhits       uint64
-	readtime        *tm.TimeDuration
-	segmentreadtime *tm.TimeDuration
-	writetime       *tm.TimeDuration
+	readtime        tm.TimeDuration
+	segmentreadtime tm.TimeDuration
+	writetime       tm.TimeDuration
 	lock            sync.Mutex
 }
 
-func NewLogStats() *LogStats {
-
-	stats := &LogStats{}
-	stats.readtime = &tm.TimeDuration{}
-	stats.segmentreadtime = &tm.TimeDuration{}
-	stats.writetime = &tm.TimeDuration{}
-
-	return stats
+type LogStats struct {
+	Ramhits         uint64  `json:"ramhits"`
+	Storagehits     uint64  `json:"storagehits"`
+	Wraps           uint64  `json:"wraps"`
+	Seg_skipped     uint64  `json:"segments_skipped"`
+	Bufferhits      uint64  `json:"buffercachehits"`
+	Totalhits       uint64  `json:"totalhits"`
+	Readtime        float64 `json:"mean_read_usecs"`
+	Segmentreadtime float64 `json:"mean_segmentread_usecs"`
+	Writetime       float64 `json:"mean_segmentwrite_usecs"`
 }
 
-func (s *LogStats) Close() {
+func (s *logstats) Stats() *LogStats {
+	scopy := &logstats{}
+	s.lock.Lock()
+	*scopy = *s
+	s.lock.Unlock()
 
+	return &LogStats{
+		Ramhits:         scopy.ramhits,
+		Storagehits:     scopy.storagehits,
+		Wraps:           scopy.wraps,
+		Seg_skipped:     scopy.seg_skipped,
+		Bufferhits:      scopy.bufferhits,
+		Totalhits:       scopy.totalhits,
+		Readtime:        scopy.readtime.MeanTimeUsecs(),
+		Segmentreadtime: scopy.segmentreadtime.MeanTimeUsecs(),
+		Writetime:       scopy.writetime.MeanTimeUsecs(),
+	}
 }
 
-func (s *LogStats) BufferHit() {
+func (s *logstats) BufferHit() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.bufferhits++
 	s.totalhits++
 }
 
-func (s *LogStats) SegmentSkipped() {
+func (s *logstats) SegmentSkipped() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.seg_skipped++
 }
 
-func (s *LogStats) RamHit() {
+func (s *logstats) RamHit() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.ramhits++
 	s.totalhits++
 }
 
-func (s *LogStats) StorageHit() {
+func (s *logstats) StorageHit() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.storagehits++
 	s.totalhits++
 }
 
-func (s *LogStats) Wrapped() {
+func (s *logstats) Wrapped() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.wraps++
 }
 
-func (s *LogStats) ReadTimeRecord(d time.Duration) {
+func (s *logstats) ReadTimeRecord(d time.Duration) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.readtime.Add(d)
 }
 
-func (s *LogStats) WriteTimeRecord(d time.Duration) {
+func (s *logstats) WriteTimeRecord(d time.Duration) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.writetime.Add(d)
 }
 
-func (s *LogStats) SegmentReadTimeRecord(d time.Duration) {
+func (s *logstats) SegmentReadTimeRecord(d time.Duration) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.segmentreadtime.Add(d)
 }
 
-func (s *LogStats) ramHitRate() float64 {
+func (s *logstats) ramHitRate() float64 {
 	if 0 == s.totalhits {
 		return 0.0
 	} else {
@@ -109,7 +126,7 @@ func (s *LogStats) ramHitRate() float64 {
 	}
 }
 
-func (s *LogStats) bufferHitRate() float64 {
+func (s *logstats) bufferHitRate() float64 {
 	if 0 == s.totalhits {
 		return 0.0
 	} else {
@@ -117,7 +134,7 @@ func (s *LogStats) bufferHitRate() float64 {
 	}
 }
 
-func (s *LogStats) String() string {
+func (s *logstats) String() string {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
