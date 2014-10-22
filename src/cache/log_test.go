@@ -79,11 +79,13 @@ func TestWrapPut(t *testing.T) {
 		<-here
 	}
 
+	// Close will also empty all the channels
+	l.Close()
+
 	// Check that we have wrapped the correct number of times
 	tests.Assert(t, l.stats.wraps == wraps)
 
 	// Cleanup
-	l.Close()
 	os.Remove(testcachefile)
 }
 
