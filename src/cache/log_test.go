@@ -83,7 +83,7 @@ func TestWrapPut(t *testing.T) {
 	l.Close()
 
 	// Check that we have wrapped the correct number of times
-	tests.Assert(t, l.stats.wraps == wraps)
+	tests.Assert(t, l.Stats().Wraps == wraps)
 
 	// Cleanup
 	os.Remove(testcachefile)

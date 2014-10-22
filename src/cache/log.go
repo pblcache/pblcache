@@ -422,3 +422,7 @@ func (c *Log) String() string {
 		"== Log Information ==\n") +
 		c.stats.String()
 }
+
+func (c *Log) Stats() *LogStats {
+	return c.stats.Stats()
+}
