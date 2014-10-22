@@ -21,7 +21,6 @@ import (
 	"github.com/lpabon/buffercache"
 	"github.com/lpabon/bufferio"
 	"github.com/lpabon/godbc"
-	"github.com/lpabon/tm"
 	"github.com/pblcache/pblcache/src/message"
 	"os"
 	"sync"
@@ -57,106 +56,6 @@ type IoSegment struct {
 	lock       sync.RWMutex
 }
 
-type IoStats struct {
-	ramhits         uint64
-	storagehits     uint64
-	wraps           uint64
-	seg_skipped     uint64
-	bufferhits      uint64
-	totalhits       uint64
-	readtime        *tm.TimeDuration
-	segmentreadtime *tm.TimeDuration
-	writetime       *tm.TimeDuration
-}
-
-func NewIoStats() *IoStats {
-
-	stats := &IoStats{}
-	stats.readtime = &tm.TimeDuration{}
-	stats.segmentreadtime = &tm.TimeDuration{}
-	stats.writetime = &tm.TimeDuration{}
-
-	return stats
-}
-
-func (s *IoStats) Close() {
-
-}
-
-func (s *IoStats) BufferHit() {
-	s.bufferhits++
-	s.totalhits++
-}
-
-func (s *IoStats) SegmentSkipped() {
-	s.seg_skipped++
-}
-
-func (s *IoStats) RamHit() {
-	s.ramhits++
-	s.totalhits++
-}
-
-func (s *IoStats) StorageHit() {
-	s.storagehits++
-	s.totalhits++
-}
-
-func (s *IoStats) Wrapped() {
-	s.wraps++
-}
-
-func (s *IoStats) ReadTimeRecord(d time.Duration) {
-	s.readtime.Add(d)
-}
-
-func (s *IoStats) WriteTimeRecord(d time.Duration) {
-	s.writetime.Add(d)
-}
-
-func (s *IoStats) SegmentReadTimeRecord(d time.Duration) {
-	s.segmentreadtime.Add(d)
-}
-
-func (s *IoStats) RamHitRate() float64 {
-	if 0 == s.totalhits {
-		return 0.0
-	} else {
-		return float64(s.ramhits) / float64(s.totalhits)
-	}
-}
-
-func (s *IoStats) BufferHitRate() float64 {
-	if 0 == s.totalhits {
-		return 0.0
-	} else {
-		return float64(s.bufferhits) / float64(s.totalhits)
-	}
-}
-
-func (s *IoStats) String() string {
-	return fmt.Sprintf("Ram Hit Rate: %.4f\n"+
-		"Ram Hits: %v\n"+
-		"Buffer Hit Rate: %.4f\n"+
-		"Buffer Hits: %v\n"+
-		"Storage Hits: %v\n"+
-		"Wraps: %v\n"+
-		"Segments Skipped: %v\n"+
-		"Mean Read Latency: %.2f usec\n"+
-		"Mean Segment Read Latency: %.2f usec\n"+
-		"Mean Write Latency: %.2f usec\n",
-		s.RamHitRate(),
-		s.ramhits,
-		s.BufferHitRate(),
-		s.bufferhits,
-		s.storagehits,
-		s.wraps,
-		s.seg_skipped,
-		s.readtime.MeanTimeUsecs(),
-		s.segmentreadtime.MeanTimeUsecs(),
-		s.writetime.MeanTimeUsecs()) // + s.readtime.String() + s.writetime.String()
-}
-
 type Log struct {
 	size           uint64
 	blocksize      uint64
@@ -174,7 +73,7 @@ type Log struct {
 	maxentries     uint64
 	fp             *os.File
 	wrapped        bool
-	stats          *IoStats
+	stats          *LogStats
 	bc             buffercache.BufferCache
 	Msgchan        chan *message.Message
 	quitchan       chan struct{}
@@ -186,7 +85,7 @@ func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64)
 	var err error
 
 	db := &Log{}
-	db.stats = NewIoStats()
+	db.stats = NewLogStats()
 	db.blocksize = blocksize
 	db.segmentsize = blocks_per_segment * blocksize
 	db.maxentries = db.segmentsize / db.blocksize

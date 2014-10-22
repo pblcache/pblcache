@@ -95,7 +95,7 @@ func (c *Cache) server() {
 				switch msg.Type {
 				case message.MsgPut:
 					// PUT
-					io.BlockNum = c.set(io.Offset)
+					io.BlockNum = c.put(io.Offset)
 
 					// Send to next one in line
 					c.pipeline <- msg
@@ -131,7 +131,7 @@ func (c *Cache) server() {
 
 func (c *Cache) invalidate(key uint64) bool {
 	if index, ok := c.addressmap[key]; ok {
-		c.stats.invalidations++
+		c.stats.Invalidation()
 
 		c.cachemap.Free(index)
 		delete(c.addressmap, key)
@@ -142,14 +142,14 @@ func (c *Cache) invalidate(key uint64) bool {
 	return false
 }
 
-func (c *Cache) set(key uint64) (index uint64) {
+func (c *Cache) put(key uint64) (index uint64) {
 
 	var (
 		evictkey uint64
 		evict    bool
 	)
 
-	c.stats.insertions++
+	c.stats.Insertion()
 
 	if index, evictkey, evict = c.cachemap.Insert(key); evict {
 		delete(c.addressmap, evictkey)
@@ -162,10 +162,10 @@ func (c *Cache) set(key uint64) (index uint64) {
 
 func (c *Cache) get(key uint64) (index uint64, ok bool) {
 
-	c.stats.reads++
+	c.stats.Read()
 
 	if index, ok = c.addressmap[key]; ok {
-		c.stats.readhits++
+		c.stats.ReadHit()
 		c.cachemap.Using(index)
 	}
 
