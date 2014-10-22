@@ -23,25 +23,11 @@ import (
 	"github.com/pblcache/pblcache/src/cache"
 	"github.com/pblcache/pblcache/src/message"
 	"math/rand"
-	"runtime"
+	"os"
 	"sync"
 	"testing"
 	"time"
 )
-
-func assert(t *testing.T, b bool) {
-	if !b {
-		pc, file, line, _ := runtime.Caller(1)
-		caller_func_info := runtime.FuncForPC(pc)
-
-		t.Errorf("\n\rASSERT:\tfunc (%s) 0x%x\n\r\tFile %s:%d",
-			caller_func_info.Name(),
-			pc,
-			file,
-			line)
-		t.FailNow()
-	}
-}
 
 func response_handler(t *testing.T,
 	wg *sync.WaitGroup,
@@ -122,7 +108,7 @@ func response_handler(t *testing.T,
 		tgh.MeanTimeUsecs(), tgm.MeanTimeUsecs(),
 		tp.MeanTimeUsecs(),
 		tih.MeanTimeUsecs(), tim.MeanTimeUsecs())
-	assert(t, errors == 0)
+	Assert(t, errors == 0)
 }
 
 func TestSimpleCache(t *testing.T) {
@@ -131,8 +117,9 @@ func TestSimpleCache(t *testing.T) {
 	blocks := uint64(logsize / blocksize)
 	blocks_per_segment := uint64(32)
 	bcsize := uint64(1 * cache.MB)
+	logfile := Tempfile()
 
-	log, actual_blocks := cache.NewLog("/tmp/l",
+	log, actual_blocks := cache.NewLog(logfile,
 		blocks,
 		blocksize,
 		blocks_per_segment,
@@ -220,12 +207,16 @@ func TestSimpleCache(t *testing.T) {
 	fmt.Print(cache)
 	fmt.Print(log)
 
-	// Send receiver a message that all clients have shut down
+	// Close cache and log
 	cache.Close()
 	log.Close()
+
+	// Send receiver a message that all clients have shut down
 	close(quit)
 
 	// Wait for receiver to finish emptying its channel
 	wgRet.Wait()
 
+	// Cleanup
+	os.Remove(logfile)
 }

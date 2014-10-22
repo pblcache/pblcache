@@ -13,22 +13,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package cache
+package tests
 
 import (
-	"github.com/pblcache/pblcache/src/tests"
+	"runtime"
 	"testing"
 )
 
-func TestAddressUtils(t *testing.T) {
-	a := Address{
-		devid: uint16(9876),
-		lba:   uint64(123456789),
+// Simple assert call for unit and functional tests
+func Assert(t *testing.T, b bool) {
+	if !b {
+		pc, file, line, _ := runtime.Caller(1)
+		caller_func_info := runtime.FuncForPC(pc)
+
+		t.Errorf("\n\rASSERT:\tfunc (%s) 0x%x\n\r\tFile %s:%d",
+			caller_func_info.Name(),
+			pc,
+			file,
+			line)
+		t.FailNow()
 	}
-
-	merged := Address64(a)
-	converted := AddressValue(merged)
-
-	tests.Assert(t, a.devid == converted.devid)
-	tests.Assert(t, a.lba == converted.lba)
 }

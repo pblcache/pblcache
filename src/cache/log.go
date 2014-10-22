@@ -80,104 +80,104 @@ type Log struct {
 	logreaders     chan *message.Message
 }
 
-func NewLog(dbpath string, blocks, blocksize, blocks_per_segment, bcsize uint64) (*Log, uint64) {
+func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64) (*Log, uint64) {
 
 	var err error
 
-	db := &Log{}
-	db.stats = NewLogStats()
-	db.blocksize = blocksize
-	db.segmentsize = blocks_per_segment * blocksize
-	db.maxentries = db.segmentsize / db.blocksize
+	log := &Log{}
+	log.stats = NewLogStats()
+	log.blocksize = blocksize
+	log.segmentsize = blocks_per_segment * blocksize
+	log.maxentries = log.segmentsize / log.blocksize
 
 	// We have to make sure that the number of blocks requested
 	// fit into the segments tracked by the log
-	db.numsegments = blocks / db.maxentries
-	db.blocks = db.numsegments * db.maxentries
-	db.size = db.numsegments * db.segmentsize
+	log.numsegments = blocks / log.maxentries
+	log.blocks = log.numsegments * log.maxentries
+	log.size = log.numsegments * log.segmentsize
 
-	if db.numsegments < fsegmentbuffers {
-		db.segmentbuffers = int(db.numsegments)
+	if log.numsegments < fsegmentbuffers {
+		log.segmentbuffers = int(log.numsegments)
 	} else {
-		db.segmentbuffers = fsegmentbuffers
+		log.segmentbuffers = fsegmentbuffers
 	}
-	godbc.Check(db.numsegments != 0,
+	godbc.Check(log.numsegments != 0,
 		fmt.Sprintf("bs:%v ssize:%v sbuffers:%v blocks:%v max:%v ns:%v size:%v\n",
-			db.blocksize, db.segmentsize, db.segmentbuffers, db.blocks,
-			db.maxentries, db.numsegments, db.size))
+			log.blocksize, log.segmentsize, log.segmentbuffers, log.blocks,
+			log.maxentries, log.numsegments, log.size))
 
 	// Create buffer cache
-	db.bc = buffercache.NewClockCache(bcsize, db.blocksize)
+	log.bc = buffercache.NewClockCache(bcsize, log.blocksize)
 
 	// Incoming message channel
-	db.Msgchan = make(chan *message.Message, 32)
-	db.quitchan = make(chan struct{})
-	db.logreaders = make(chan *message.Message, 32)
+	log.Msgchan = make(chan *message.Message, 32)
+	log.quitchan = make(chan struct{})
+	log.logreaders = make(chan *message.Message, 32)
 
 	// Segment channel state machine:
 	// 		-> Client writes available segment
 	// 		-> Segment written to storage
 	// 		-> Segment read from storage
 	// 		-> Segment available
-	db.chwriting = make(chan *IoSegment, db.segmentbuffers)
-	db.chavailable = make(chan *IoSegment, db.segmentbuffers)
-	db.chreader = make(chan *IoSegment, db.segmentbuffers)
+	log.chwriting = make(chan *IoSegment, log.segmentbuffers)
+	log.chavailable = make(chan *IoSegment, log.segmentbuffers)
+	log.chreader = make(chan *IoSegment, log.segmentbuffers)
 
 	// Set up each of the segments
-	db.segments = make([]IoSegment, db.segmentbuffers)
-	for i := 0; i < db.segmentbuffers; i++ {
-		db.segments[i].segmentbuf = make([]byte, db.segmentsize)
-		db.segments[i].data = bufferio.NewBufferIO(db.segments[i].segmentbuf)
+	log.segments = make([]IoSegment, log.segmentbuffers)
+	for i := 0; i < log.segmentbuffers; i++ {
+		log.segments[i].segmentbuf = make([]byte, log.segmentsize)
+		log.segments[i].data = bufferio.NewBufferIO(log.segments[i].segmentbuf)
 
 		// Fill ch available with all the available buffers
-		db.chreader <- &db.segments[i]
+		log.chreader <- &log.segments[i]
 	}
 
 	// Set up the first available segment
-	db.segment = <-db.chreader
+	log.segment = <-log.chreader
 
 	// Open the storage device
-	os.Remove(dbpath)
+	os.Remove(logfile)
 
 	// For DirectIO
 	if fdirectio {
-		db.fp, err = os.OpenFile(dbpath, syscall.O_DIRECT|os.O_CREATE|os.O_RDWR, os.ModePerm)
+		log.fp, err = os.OpenFile(logfile, syscall.O_DIRECT|os.O_CREATE|os.O_RDWR|os.O_EXCL, os.ModePerm)
 	} else {
-		db.fp, err = os.OpenFile(dbpath, os.O_CREATE|os.O_RDWR, os.ModePerm)
+		log.fp, err = os.OpenFile(logfile, os.O_CREATE|os.O_RDWR|os.O_EXCL, os.ModePerm)
 	}
 	godbc.Check(err == nil)
 
-	//err = syscall.Fallocate(int(db.fp.Fd()), 0, 0, int64(blocks*blocksize))
+	//err = syscall.Fallocate(int(log.fp.Fd()), 0, 0, int64(blocks*blocksize))
 	//godbc.Check(err == nil)
 
-	godbc.Ensure(db.size != 0)
-	godbc.Ensure(db.blocksize == blocksize)
-	godbc.Ensure(db.Msgchan != nil)
-	godbc.Ensure(db.chwriting != nil)
-	godbc.Ensure(db.chavailable != nil)
-	godbc.Ensure(db.chreader != nil)
-	godbc.Ensure(db.segmentbuffers == len(db.segments))
-	godbc.Ensure(db.segmentbuffers-1 == len(db.chreader))
-	godbc.Ensure(0 == len(db.chavailable))
-	godbc.Ensure(0 == len(db.chwriting))
-	godbc.Ensure(nil != db.segment)
+	godbc.Ensure(log.size != 0)
+	godbc.Ensure(log.blocksize == blocksize)
+	godbc.Ensure(log.Msgchan != nil)
+	godbc.Ensure(log.chwriting != nil)
+	godbc.Ensure(log.chavailable != nil)
+	godbc.Ensure(log.chreader != nil)
+	godbc.Ensure(log.segmentbuffers == len(log.segments))
+	godbc.Ensure(log.segmentbuffers-1 == len(log.chreader))
+	godbc.Ensure(0 == len(log.chavailable))
+	godbc.Ensure(0 == len(log.chwriting))
+	godbc.Ensure(nil != log.segment)
 
 	// Now that we are sure everything is clean,
 	// we can start the goroutines
 	for i := 0; i < 32; i++ {
-		db.wg.Add(1)
-		go db.logread()
+		log.wg.Add(1)
+		go log.logread()
 	}
-	db.server()
-	db.writer()
-	db.reader()
+	log.server()
+	log.writer()
+	log.reader()
 
 	// Return the log object to the caller.
 	// Also return the maximum number of blocks, which may
 	// be different from what the caller asked.  The log
 	// will make sure that the maximum number of blocks
 	// are contained per segment
-	return db, db.blocks
+	return log, log.blocks
 }
 
 func (c *Log) logread() {

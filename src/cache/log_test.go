@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"github.com/lpabon/tm"
 	"github.com/pblcache/pblcache/src/message"
+	"github.com/pblcache/pblcache/src/tests"
 	"math/rand"
 	"os"
 	"sync"
@@ -27,16 +28,13 @@ import (
 	"time"
 )
 
-const (
-	testcachefile = "/tmp/l"
-)
-
 func TestNewLog(t *testing.T) {
 
 	// Simple log
+	testcachefile := tests.Tempfile()
 	l, blocks := NewLog(testcachefile, 16, 4096, 4, 4096*2)
-	assert(t, l != nil)
-	assert(t, blocks == 16)
+	tests.Assert(t, l != nil)
+	tests.Assert(t, blocks == 16)
 	l.Close()
 
 	// Check the log correctly return maximum number of
@@ -44,8 +42,8 @@ func TestNewLog(t *testing.T) {
 	// 17 blocks are not aligned to a segment with 4 blocks
 	// per segment
 	l, blocks = NewLog(testcachefile, 17, 4096, 4, 4096*2)
-	assert(t, l != nil)
-	assert(t, blocks == 16)
+	tests.Assert(t, l != nil)
+	tests.Assert(t, blocks == 16)
 	l.Close()
 
 	// Cleanup
@@ -56,12 +54,16 @@ func TestNewLog(t *testing.T) {
 func TestWrapPut(t *testing.T) {
 	// Simple log
 	blocks := uint64(16)
+	testcachefile := tests.Tempfile()
 	l, logblocks := NewLog(testcachefile, blocks, 4096, 2, 4096*2)
-	assert(t, l != nil)
-	assert(t, blocks == logblocks)
+	tests.Assert(t, l != nil)
+	tests.Assert(t, blocks == logblocks)
 
 	here := make(chan *message.Message)
 	wraps := uint64(4)
+
+	// Write enough blocks to wrap around the log
+	// as many times as determined by the value in 'wraps'
 	for io := uint8(0); io < uint8(blocks*wraps); io++ {
 		buf := make([]byte, 4096)
 		buf[0] = byte(io)
@@ -77,9 +79,11 @@ func TestWrapPut(t *testing.T) {
 		<-here
 	}
 
+	// Check that we have wrapped the correct number of times
+	tests.Assert(t, l.stats.wraps == wraps)
+
 	// Cleanup
 	l.Close()
-	assert(t, l.stats.wraps == wraps)
 	os.Remove(testcachefile)
 }
 
@@ -89,17 +93,26 @@ func TestReadCorrectness(t *testing.T) {
 	bs := uint64(4096)
 	blocks_per_segment := uint64(2)
 	buffercache := uint64(4096 * 10)
+	testcachefile := tests.Tempfile()
 	l, logblocks := NewLog(testcachefile,
 		blocks,
 		bs,
 		blocks_per_segment,
 		buffercache)
-	assert(t, l != nil)
-	assert(t, blocks == logblocks)
+	tests.Assert(t, l != nil)
+	tests.Assert(t, blocks == logblocks)
 
 	here := make(chan *message.Message)
+
+	// Write enough blocks in the log to reach
+	// the end.
 	for io := uint8(0); io < uint8(blocks); io++ {
 		buf := make([]byte, 4096)
+
+		// Save the block number in the buffer
+		// so that we can check it later.  For simplicity
+		// we have made sure the block number is only
+		// one byte.
 		buf[0] = byte(io)
 
 		msg := message.NewMsgPut()
@@ -123,7 +136,7 @@ func TestReadCorrectness(t *testing.T) {
 	l.Msgchan <- msg
 	<-here
 
-	assert(t, buf[0] == uint8(blocks-1))
+	tests.Assert(t, buf[0] == uint8(blocks-1))
 
 	for io := uint8(0); io < uint8(blocks); io++ {
 		buf := make([]byte, 4096)
@@ -133,11 +146,13 @@ func TestReadCorrectness(t *testing.T) {
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
 		iopkt.BlockNum = uint64(io)
-
 		l.Msgchan <- msg
+
+		// Wait here for the response
 		<-here
 
-		assert(t, buf[0] == uint8(io))
+		// Check the block number is correct
+		tests.Assert(t, buf[0] == uint8(io))
 	}
 
 	l.Close()
@@ -197,13 +212,14 @@ func TestLogConcurrency(t *testing.T) {
 	bs := uint64(4096)
 	blocks_per_segment := uint64(2)
 	buffercache := uint64(4096 * 24)
+	testcachefile := tests.Tempfile()
 	l, logblocks := NewLog(testcachefile,
 		blocks,
 		bs,
 		blocks_per_segment,
 		buffercache)
-	assert(t, l != nil)
-	assert(t, blocks == logblocks)
+	tests.Assert(t, l != nil)
+	tests.Assert(t, blocks == logblocks)
 
 	here := make(chan *message.Message)
 

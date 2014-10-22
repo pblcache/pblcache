@@ -14,5 +14,6 @@
 // limitations under the License.
 //
 
-// Place in this directory all functional tests
+// Place in this directory all functional tests and any
+// test utilities
 package tests

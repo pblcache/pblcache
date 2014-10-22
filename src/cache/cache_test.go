@@ -19,26 +19,12 @@ import (
 	"fmt"
 	"github.com/lpabon/tm"
 	"github.com/pblcache/pblcache/src/message"
+	"github.com/pblcache/pblcache/src/tests"
 	"math/rand"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
-
-func assert(t *testing.T, b bool) {
-	if !b {
-		pc, file, line, _ := runtime.Caller(1)
-		caller_func_info := runtime.FuncForPC(pc)
-
-		t.Errorf("\n\rASSERT:\tfunc (%s) 0x%x\n\r\tFile %s:%d",
-			caller_func_info.Name(),
-			pc,
-			file,
-			line)
-		t.FailNow()
-	}
-}
 
 func TestNewCache(t *testing.T) {
 	nc := message.NewNullTerminator()
@@ -46,7 +32,7 @@ func TestNewCache(t *testing.T) {
 	defer nc.Close()
 
 	c := NewCache(8, nc.In)
-	assert(t, c != nil)
+	tests.Assert(t, c != nil)
 	c.Close()
 }
 
@@ -56,7 +42,7 @@ func TestCacheSimple(t *testing.T) {
 	defer nc.Close()
 
 	c := NewCache(8, nc.In)
-	assert(t, c != nil)
+	tests.Assert(t, c != nil)
 
 	here := make(chan *message.Message)
 	m := message.NewMsgPut()
@@ -67,24 +53,24 @@ func TestCacheSimple(t *testing.T) {
 	// First Put
 	c.Msgchan <- m
 	<-here
-	assert(t, io.BlockNum == 0)
-	assert(t, c.stats.insertions == 1)
+	tests.Assert(t, io.BlockNum == 0)
+	tests.Assert(t, c.stats.insertions == 1)
 
 	val, ok := c.addressmap[io.Offset]
-	assert(t, val == 0)
-	assert(t, ok == true)
+	tests.Assert(t, val == 0)
+	tests.Assert(t, ok == true)
 
 	// Insert again.  Should allocate
 	// next block
 	c.Msgchan <- m
 	<-here
-	assert(t, io.BlockNum == 1)
-	assert(t, m.Err == nil)
-	assert(t, c.stats.insertions == 2)
+	tests.Assert(t, io.BlockNum == 1)
+	tests.Assert(t, m.Err == nil)
+	tests.Assert(t, c.stats.insertions == 2)
 
 	val, ok = c.addressmap[io.Offset]
-	assert(t, val == 1)
-	assert(t, ok == true)
+	tests.Assert(t, val == 1)
+	tests.Assert(t, ok == true)
 
 	// Send a Get
 	mg := message.NewMsgGet()
@@ -93,11 +79,11 @@ func TestCacheSimple(t *testing.T) {
 	mg.RetChan = here
 	c.Msgchan <- mg
 	<-here
-	assert(t, io.BlockNum == 1)
-	assert(t, mg.Err == nil)
-	assert(t, c.stats.insertions == 2)
-	assert(t, c.stats.readhits == 1)
-	assert(t, c.stats.reads == 1)
+	tests.Assert(t, io.BlockNum == 1)
+	tests.Assert(t, mg.Err == nil)
+	tests.Assert(t, c.stats.insertions == 2)
+	tests.Assert(t, c.stats.readhits == 1)
+	tests.Assert(t, c.stats.reads == 1)
 
 	// Send Invalidate
 	mi := message.NewMsgInvalidate()
@@ -106,12 +92,12 @@ func TestCacheSimple(t *testing.T) {
 	mi.RetChan = here
 	c.Msgchan <- mi
 	<-here
-	assert(t, mi.Err == nil)
-	assert(t, c.stats.insertions == 2)
-	assert(t, c.stats.readhits == 1)
-	assert(t, c.stats.reads == 1)
-	assert(t, c.stats.invalidations == 1)
-	assert(t, c.stats.invalidatehits == 1)
+	tests.Assert(t, mi.Err == nil)
+	tests.Assert(t, c.stats.insertions == 2)
+	tests.Assert(t, c.stats.readhits == 1)
+	tests.Assert(t, c.stats.reads == 1)
+	tests.Assert(t, c.stats.invalidations == 1)
+	tests.Assert(t, c.stats.invalidatehits == 1)
 
 	// Send Invalidate
 	mi = message.NewMsgInvalidate()
@@ -120,12 +106,12 @@ func TestCacheSimple(t *testing.T) {
 	mi.RetChan = here
 	c.Msgchan <- mi
 	<-here
-	assert(t, mi.Err == ErrNotFound)
-	assert(t, c.stats.insertions == 2)
-	assert(t, c.stats.readhits == 1)
-	assert(t, c.stats.reads == 1)
-	assert(t, c.stats.invalidations == 2)
-	assert(t, c.stats.invalidatehits == 1)
+	tests.Assert(t, mi.Err == ErrNotFound)
+	tests.Assert(t, c.stats.insertions == 2)
+	tests.Assert(t, c.stats.readhits == 1)
+	tests.Assert(t, c.stats.reads == 1)
+	tests.Assert(t, c.stats.invalidations == 2)
+	tests.Assert(t, c.stats.invalidatehits == 1)
 
 	// Send a Get again, but it should not be there
 	mg = message.NewMsgGet()
@@ -134,12 +120,12 @@ func TestCacheSimple(t *testing.T) {
 	mg.RetChan = here
 	c.Msgchan <- mg
 	<-here
-	assert(t, mg.Err == ErrNotFound)
-	assert(t, c.stats.insertions == 2)
-	assert(t, c.stats.readhits == 1)
-	assert(t, c.stats.reads == 2)
-	assert(t, c.stats.invalidations == 2)
-	assert(t, c.stats.invalidatehits == 1)
+	tests.Assert(t, mg.Err == ErrNotFound)
+	tests.Assert(t, c.stats.insertions == 2)
+	tests.Assert(t, c.stats.readhits == 1)
+	tests.Assert(t, c.stats.reads == 2)
+	tests.Assert(t, c.stats.invalidations == 2)
+	tests.Assert(t, c.stats.invalidatehits == 1)
 
 	c.Close()
 }

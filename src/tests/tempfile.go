@@ -13,22 +13,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package cache
+package tests
 
 import (
-	"github.com/pblcache/pblcache/src/tests"
-	"testing"
+	"fmt"
+	"os"
 )
 
-func TestAddressUtils(t *testing.T) {
-	a := Address{
-		devid: uint16(9876),
-		lba:   uint64(123456789),
+func tempfile_generate() func() string {
+	counter := 0
+	return func() string {
+		counter++
+		return fmt.Sprintf("/tmp/pblcache_test.%d-%d",
+			os.Getpid(), counter)
 	}
+}
 
-	merged := Address64(a)
-	converted := AddressValue(merged)
-
-	tests.Assert(t, a.devid == converted.devid)
-	tests.Assert(t, a.lba == converted.lba)
+// Return a filename string in the form of
+// /tmp/pblcache_test.<Process Id>-<Counter>
+func Tempfile() string {
+	genname := tempfile_generate()
+	return genname()
 }
