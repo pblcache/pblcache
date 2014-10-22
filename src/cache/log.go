@@ -420,7 +420,7 @@ func (c *Log) Close() {
 func (c *Log) String() string {
 	return fmt.Sprintf(
 		"== Log Information ==\n") +
-		c.stats.String()
+		c.stats.Stats().String()
 }
 
 func (c *Log) Stats() *LogStats {

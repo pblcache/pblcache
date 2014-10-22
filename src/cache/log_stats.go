@@ -23,6 +23,58 @@ import (
 	"time"
 )
 
+type LogStats struct {
+	Ramhits         uint64  `json:"ramhits"`
+	Storagehits     uint64  `json:"storagehits"`
+	Wraps           uint64  `json:"wraps"`
+	Seg_skipped     uint64  `json:"segments_skipped"`
+	Bufferhits      uint64  `json:"buffercachehits"`
+	Totalhits       uint64  `json:"totalhits"`
+	Readtime        float64 `json:"mean_read_usecs"`
+	Segmentreadtime float64 `json:"mean_segmentread_usecs"`
+	Writetime       float64 `json:"mean_segmentwrite_usecs"`
+}
+
+func (s *LogStats) RamHitRate() float64 {
+	if 0 == s.Totalhits {
+		return 0.0
+	} else {
+		return float64(s.Ramhits) / float64(s.Totalhits)
+	}
+}
+
+func (s *LogStats) BufferHitRate() float64 {
+	if 0 == s.Totalhits {
+		return 0.0
+	} else {
+		return float64(s.Bufferhits) / float64(s.Totalhits)
+	}
+}
+
+func (s *LogStats) String() string {
+	return fmt.Sprintf(
+		"Ram Hit Rate: %.4f\n"+
+			"Ram Hits: %v\n"+
+			"Buffer Hit Rate: %.4f\n"+
+			"Buffer Hits: %v\n"+
+			"Storage Hits: %v\n"+
+			"Wraps: %v\n"+
+			"Segments Skipped: %v\n"+
+			"Mean Read Latency: %.2f usec\n"+
+			"Mean Segment Read Latency: %.2f usec\n"+
+			"Mean Write Latency: %.2f usec\n",
+		s.RamHitRate(),
+		s.Ramhits,
+		s.BufferHitRate(),
+		s.Bufferhits,
+		s.Storagehits,
+		s.Wraps,
+		s.Seg_skipped,
+		s.Readtime,
+		s.Segmentreadtime,
+		s.Writetime)
+}
+
 type logstats struct {
 	ramhits         uint64
 	storagehits     uint64
@@ -34,18 +86,6 @@ type logstats struct {
 	segmentreadtime tm.TimeDuration
 	writetime       tm.TimeDuration
 	lock            sync.Mutex
-}
-
-type LogStats struct {
-	Ramhits         uint64  `json:"ramhits"`
-	Storagehits     uint64  `json:"storagehits"`
-	Wraps           uint64  `json:"wraps"`
-	Seg_skipped     uint64  `json:"segments_skipped"`
-	Bufferhits      uint64  `json:"buffercachehits"`
-	Totalhits       uint64  `json:"totalhits"`
-	Readtime        float64 `json:"mean_read_usecs"`
-	Segmentreadtime float64 `json:"mean_segmentread_usecs"`
-	Writetime       float64 `json:"mean_segmentwrite_usecs"`
 }
 
 func (s *logstats) Stats() *LogStats {
@@ -116,46 +156,4 @@ func (s *logstats) SegmentReadTimeRecord(d time.Duration) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.segmentreadtime.Add(d)
-}
-
-func (s *logstats) ramHitRate() float64 {
-	if 0 == s.totalhits {
-		return 0.0
-	} else {
-		return float64(s.ramhits) / float64(s.totalhits)
-	}
-}
-
-func (s *logstats) bufferHitRate() float64 {
-	if 0 == s.totalhits {
-		return 0.0
-	} else {
-		return float64(s.bufferhits) / float64(s.totalhits)
-	}
-}
-
-func (s *logstats) String() string {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	return fmt.Sprintf("Ram Hit Rate: %.4f\n"+
-		"Ram Hits: %v\n"+
-		"Buffer Hit Rate: %.4f\n"+
-		"Buffer Hits: %v\n"+
-		"Storage Hits: %v\n"+
-		"Wraps: %v\n"+
-		"Segments Skipped: %v\n"+
-		"Mean Read Latency: %.2f usec\n"+
-		"Mean Segment Read Latency: %.2f usec\n"+
-		"Mean Write Latency: %.2f usec\n",
-		s.ramHitRate(),
-		s.ramhits,
-		s.bufferHitRate(),
-		s.bufferhits,
-		s.storagehits,
-		s.wraps,
-		s.seg_skipped,
-		s.readtime.MeanTimeUsecs(),
-		s.segmentreadtime.MeanTimeUsecs(),
-		s.writetime.MeanTimeUsecs()) // + s.readtime.String() + s.writetime.String()
 }

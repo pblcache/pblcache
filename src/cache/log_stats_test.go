@@ -130,20 +130,24 @@ func TestLogStatsWriteTimeRecord(t *testing.T) {
 
 func TestRamHitRate(t *testing.T) {
 	s := &logstats{}
-	tests.Assert(t, s.ramHitRate() == 0.0)
+	ls := s.Stats()
+	tests.Assert(t, ls.RamHitRate() == 0.0)
 
 	s.ramhits = 100
 	s.totalhits = 200
-	tests.Assert(t, s.ramHitRate() == 0.5)
+	ls = s.Stats()
+	tests.Assert(t, ls.RamHitRate() == 0.5)
 }
 
 func TestBufferHitRate(t *testing.T) {
 	s := &logstats{}
-	tests.Assert(t, s.bufferHitRate() == 0.0)
+	ls := s.Stats()
+	tests.Assert(t, ls.BufferHitRate() == 0.0)
 
 	s.bufferhits = 100
 	s.totalhits = 200
-	tests.Assert(t, s.bufferHitRate() == 0.5)
+	ls = s.Stats()
+	tests.Assert(t, ls.BufferHitRate() == 0.5)
 }
 
 func TestLogStatsJson(t *testing.T) {
