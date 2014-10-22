@@ -18,25 +18,21 @@ package cache
 
 import (
 	"fmt"
-	"github.com/lpabon/tm"
 	"sync"
 )
 
 type CacheStats struct {
-	readhits, writehits      int
-	reads, writes            int
-	evictions, invalidations int
-	insertions               int
-	treads                   *tm.TimeDuration
-	twrites                  *tm.TimeDuration
-	lock                     sync.Mutex
+	readhits       uint64
+	invalidatehits uint64
+	reads          uint64
+	evictions      uint64
+	invalidations  uint64
+	insertions     uint64
+	lock           sync.Mutex
 }
 
 func NewCacheStats() *CacheStats {
-	c := &CacheStats{}
-	c.treads = &tm.TimeDuration{}
-	c.twrites = &tm.TimeDuration{}
-	return c
+	return &CacheStats{}
 }
 
 func (c *CacheStats) readHitRateDelta(prev *CacheStats) float64 {
@@ -49,13 +45,13 @@ func (c *CacheStats) readHitRateDelta(prev *CacheStats) float64 {
 	}
 }
 
-func (c *CacheStats) writeHitRateDelta(prev *CacheStats) float64 {
-	writes := c.writes - prev.writes
-	writehits := c.writehits - prev.writehits
-	if writes == 0 {
+func (c *CacheStats) invalidateHitRateDelta(prev *CacheStats) float64 {
+	invalidations := c.invalidations - prev.invalidations
+	invalidatehits := c.invalidatehits - prev.invalidatehits
+	if invalidations == 0 {
 		return 0.0
 	} else {
-		return float64(writehits) / float64(writes)
+		return float64(invalidatehits) / float64(invalidations)
 	}
 }
 
@@ -67,11 +63,11 @@ func (c *CacheStats) readHitRate() float64 {
 	}
 }
 
-func (c *CacheStats) writeHitRate() float64 {
-	if c.writes == 0 {
+func (c *CacheStats) invalidateHitRate() float64 {
+	if c.invalidations == 0 {
 		return 0.0
 	} else {
-		return float64(c.writehits) / float64(c.writes)
+		return float64(c.invalidatehits) / float64(c.invalidations)
 	}
 
 }
@@ -83,9 +79,6 @@ func (c *CacheStats) Copy() *CacheStats {
 	statscopy := &CacheStats{}
 	*statscopy = *c
 
-	statscopy.treads = c.treads.Copy()
-	statscopy.twrites = c.twrites.Copy()
-
 	return statscopy
 }
 
@@ -96,11 +89,11 @@ func (c *CacheStats) ReadHit() {
 	c.readhits++
 }
 
-func (c *CacheStats) WriteHit() {
+func (c *CacheStats) InvalidateHit() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	c.writehits++
+	c.invalidatehits++
 }
 
 func (c *CacheStats) Read() {
@@ -108,13 +101,6 @@ func (c *CacheStats) Read() {
 	defer c.lock.Unlock()
 
 	c.reads++
-}
-
-func (c *CacheStats) Write() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.writes++
 }
 
 func (c *CacheStats) Eviction() {
@@ -144,27 +130,21 @@ func (c *CacheStats) String() string {
 
 	return fmt.Sprintf(
 		"Read Hit Rate: %.4f\n"+
-			"Write Hit Rate: %.4f\n"+
+			"Invalidate Hit Rate: %.4f\n"+
 			"Read hits: %d\n"+
-			"Write hits: %d\n"+
+			"Invalidate hits: %d\n"+
 			"Reads: %d\n"+
-			"Writes: %d\n"+
 			"Insertions: %d\n"+
 			"Evictions: %d\n"+
-			"Invalidations: %d\n"+
-			"Mean Read Latency: %.2f usecs\n"+
-			"Mean Write Latency: %.2f usecs\n",
+			"Invalidations: %d\n",
 		c.readHitRate(),
-		c.writeHitRate(),
+		c.invalidateHitRate(),
 		c.readhits,
-		c.writehits,
+		c.invalidatehits,
 		c.reads,
-		c.writes,
 		c.insertions,
 		c.evictions,
-		c.invalidations,
-		c.treads.MeanTimeUsecs(),
-		c.twrites.MeanTimeUsecs())
+		c.invalidations)
 }
 
 func (c *CacheStats) Dump() string {
@@ -173,27 +153,21 @@ func (c *CacheStats) Dump() string {
 
 	return fmt.Sprintf(
 		"%v,"+ // Read Hit Rate 1
-			"%v,"+ // Write Hit Rate 2
+			"%v,"+ // Invalidate Hit Rate 2
 			"%d,"+ // Read Hits 3
-			"%d,"+ // Write Hits 4
-			"%d,"+ // Reads 6
-			"%d,"+ // Writes 7
-			"%d,"+ // Insertions 9
-			"%d,"+ // Evictions 10
-			"%d,"+ // Invalidations 11
-			"%v,"+ // Mean Reads 12
-			"%v\n", // Mean Writes 13
+			"%d,"+ // Invalidation Hits 4
+			"%d,"+ // Reads 5
+			"%d,"+ // Insertions 6
+			"%d,"+ // Evictions 7
+			"%d\n", // Invalidations 8
 		c.readHitRate(),
-		c.writeHitRate(),
+		c.invalidateHitRate(),
 		c.readhits,
-		c.writehits,
+		c.invalidatehits,
 		c.reads,
-		c.writes,
 		c.insertions,
 		c.evictions,
-		c.invalidations,
-		c.treads.MeanTimeUsecs(),
-		c.twrites.MeanTimeUsecs())
+		c.invalidations)
 }
 
 func (c *CacheStats) DumpDelta(prev *CacheStats) string {
@@ -202,25 +176,19 @@ func (c *CacheStats) DumpDelta(prev *CacheStats) string {
 
 	return fmt.Sprintf(
 		"%v,"+ // Read Hit Rate 1
-			"%v,"+ // Write Hit Rate 2
+			"%v,"+ // Invalidate Hit Rate 2
 			"%d,"+ // Read Hits 3
-			"%d,"+ // Write Hits 4
-			"%d,"+ // Reads 6
-			"%d,"+ // Writes 7
-			"%d,"+ // Insertions 9
-			"%d,"+ // Evictions 10
-			"%d,"+ // Invalidations 11
-			"%v,"+ // Mean Reads 12
-			"%v\n", // Mean Writes 13
+			"%d,"+ // Invalide Hits 4
+			"%d,"+ // Reads 5
+			"%d,"+ // Insertions 6
+			"%d,"+ // Evictions 7
+			"%d\n", // Invalidations 8
 		c.readHitRateDelta(prev),
-		c.writeHitRateDelta(prev),
+		c.invalidateHitRateDelta(prev),
 		c.readhits-prev.readhits,
-		c.writehits-prev.writehits,
+		c.invalidatehits-prev.invalidatehits,
 		c.reads-prev.reads,
-		c.writes-prev.writes,
 		c.insertions-prev.insertions,
 		c.evictions-prev.evictions,
-		c.invalidations-prev.invalidations,
-		c.treads.DeltaMeanTimeUsecs(prev.treads),
-		c.twrites.DeltaMeanTimeUsecs(prev.twrites))
+		c.invalidations-prev.invalidations)
 }

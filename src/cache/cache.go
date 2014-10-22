@@ -18,7 +18,6 @@ package cache
 
 import (
 	"errors"
-	"fmt"
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/src/message"
 	"sync"
@@ -130,8 +129,10 @@ func (c *Cache) server() {
 }
 
 func (c *Cache) invalidate(key uint64) bool {
+	c.stats.Invalidation()
+
 	if index, ok := c.addressmap[key]; ok {
-		c.stats.Invalidation()
+		c.stats.InvalidateHit()
 
 		c.cachemap.Free(index)
 		delete(c.addressmap, key)
@@ -152,6 +153,7 @@ func (c *Cache) put(key uint64) (index uint64) {
 	c.stats.Insertion()
 
 	if index, evictkey, evict = c.cachemap.Insert(key); evict {
+		c.stats.Eviction()
 		delete(c.addressmap, evictkey)
 	}
 
@@ -173,9 +175,7 @@ func (c *Cache) get(key uint64) (index uint64, ok bool) {
 }
 
 func (c *Cache) String() string {
-	return fmt.Sprintf(
-		"Cache Utilization: 0 \n" +
-			c.stats.String())
+	return c.stats.String()
 }
 
 func (c *Cache) Stats() *CacheStats {

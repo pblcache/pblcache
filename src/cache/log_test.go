@@ -267,14 +267,14 @@ func TestLogConcurrency(t *testing.T) {
 			buf[0] = byte(io)
 
 			msg := message.NewMsgPut()
-			msg.RetChan = here
+			msg.RetChan = returnch
 
 			iopkt := msg.IoPkt()
 			iopkt.Buffer = buf
 			iopkt.BlockNum = uint64(io)
 
+			msg.TimeStart()
 			l.Msgchan <- msg
-			<-here
 			time.Sleep(time.Microsecond * time.Duration((r.Intn(1000) + 100)))
 		}
 	}

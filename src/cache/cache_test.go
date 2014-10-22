@@ -68,6 +68,7 @@ func TestCacheSimple(t *testing.T) {
 	c.Msgchan <- m
 	<-here
 	assert(t, io.BlockNum == 0)
+	assert(t, c.stats.insertions == 1)
 
 	val, ok := c.addressmap[io.Offset]
 	assert(t, val == 0)
@@ -79,6 +80,7 @@ func TestCacheSimple(t *testing.T) {
 	<-here
 	assert(t, io.BlockNum == 1)
 	assert(t, m.Err == nil)
+	assert(t, c.stats.insertions == 2)
 
 	val, ok = c.addressmap[io.Offset]
 	assert(t, val == 1)
@@ -93,6 +95,9 @@ func TestCacheSimple(t *testing.T) {
 	<-here
 	assert(t, io.BlockNum == 1)
 	assert(t, mg.Err == nil)
+	assert(t, c.stats.insertions == 2)
+	assert(t, c.stats.readhits == 1)
+	assert(t, c.stats.reads == 1)
 
 	// Send Invalidate
 	mi := message.NewMsgInvalidate()
@@ -102,6 +107,11 @@ func TestCacheSimple(t *testing.T) {
 	c.Msgchan <- mi
 	<-here
 	assert(t, mi.Err == nil)
+	assert(t, c.stats.insertions == 2)
+	assert(t, c.stats.readhits == 1)
+	assert(t, c.stats.reads == 1)
+	assert(t, c.stats.invalidations == 1)
+	assert(t, c.stats.invalidatehits == 1)
 
 	// Send Invalidate
 	mi = message.NewMsgInvalidate()
@@ -111,6 +121,11 @@ func TestCacheSimple(t *testing.T) {
 	c.Msgchan <- mi
 	<-here
 	assert(t, mi.Err == ErrNotFound)
+	assert(t, c.stats.insertions == 2)
+	assert(t, c.stats.readhits == 1)
+	assert(t, c.stats.reads == 1)
+	assert(t, c.stats.invalidations == 2)
+	assert(t, c.stats.invalidatehits == 1)
 
 	// Send a Get again, but it should not be there
 	mg = message.NewMsgGet()
@@ -120,6 +135,11 @@ func TestCacheSimple(t *testing.T) {
 	c.Msgchan <- mg
 	<-here
 	assert(t, mg.Err == ErrNotFound)
+	assert(t, c.stats.insertions == 2)
+	assert(t, c.stats.readhits == 1)
+	assert(t, c.stats.reads == 2)
+	assert(t, c.stats.invalidations == 2)
+	assert(t, c.stats.invalidatehits == 1)
 
 	c.Close()
 }
@@ -189,7 +209,7 @@ func response_handler(wg *sync.WaitGroup,
 		tih.MeanTimeUsecs(), tim.MeanTimeUsecs())
 }
 
-func TestConcurrency(t *testing.T) {
+func TestCacheConcurrency(t *testing.T) {
 	var wgIo, wgRet sync.WaitGroup
 
 	nc := message.NewNullTerminator()
@@ -244,6 +264,7 @@ func TestConcurrency(t *testing.T) {
 	wgIo.Wait()
 
 	// Send receiver a message that all clients have shut down
+	fmt.Print(c)
 	c.Close()
 	close(quit)
 

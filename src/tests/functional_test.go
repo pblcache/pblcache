@@ -217,6 +217,7 @@ func TestSimpleCache(t *testing.T) {
 	wgIo.Wait()
 
 	// Print stats
+	fmt.Print(cache)
 	fmt.Print(log)
 
 	// Send receiver a message that all clients have shut down
