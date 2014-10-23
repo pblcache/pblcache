@@ -18,7 +18,7 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/pblcache/pblcache/src/tests"
+	"github.com/pblcache/pblcache/tests"
 	"reflect"
 	"strconv"
 	"strings"

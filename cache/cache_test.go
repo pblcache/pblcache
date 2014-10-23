@@ -18,8 +18,8 @@ package cache
 import (
 	"fmt"
 	"github.com/lpabon/tm"
-	"github.com/pblcache/pblcache/src/message"
-	"github.com/pblcache/pblcache/src/tests"
+	"github.com/pblcache/pblcache/message"
+	"github.com/pblcache/pblcache/tests"
 	"math/rand"
 	"sync"
 	"testing"

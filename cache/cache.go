@@ -19,7 +19,7 @@ package cache
 import (
 	"errors"
 	"github.com/lpabon/godbc"
-	"github.com/pblcache/pblcache/src/message"
+	"github.com/pblcache/pblcache/message"
 	"sync"
 )
 

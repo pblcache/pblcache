@@ -21,7 +21,7 @@ import (
 	"github.com/lpabon/buffercache"
 	"github.com/lpabon/bufferio"
 	"github.com/lpabon/godbc"
-	"github.com/pblcache/pblcache/src/message"
+	"github.com/pblcache/pblcache/message"
 	"os"
 	"sync"
 	"syscall"

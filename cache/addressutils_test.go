@@ -16,7 +16,7 @@
 package cache
 
 import (
-	"github.com/pblcache/pblcache/src/tests"
+	"github.com/pblcache/pblcache/tests"
 	"testing"
 )
 
