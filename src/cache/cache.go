@@ -24,7 +24,7 @@ import (
 )
 
 type Cache struct {
-	stats      *CacheStats
+	stats      *cachestats
 	cachemap   *CacheMap
 	addressmap map[uint64]uint64
 	blocks     uint64
@@ -47,7 +47,7 @@ func NewCache(blocks uint64, pipeline chan *message.Message) *Cache {
 	cache.blocks = blocks
 	cache.pipeline = pipeline
 
-	cache.stats = NewCacheStats()
+	cache.stats = &cachestats{}
 	cache.cachemap = NewCacheMap(cache.blocks)
 	cache.addressmap = make(map[uint64]uint64)
 
@@ -129,10 +129,10 @@ func (c *Cache) server() {
 }
 
 func (c *Cache) invalidate(key uint64) bool {
-	c.stats.Invalidation()
+	c.stats.invalidation()
 
 	if index, ok := c.addressmap[key]; ok {
-		c.stats.InvalidateHit()
+		c.stats.invalidateHit()
 
 		c.cachemap.Free(index)
 		delete(c.addressmap, key)
@@ -150,10 +150,10 @@ func (c *Cache) put(key uint64) (index uint64) {
 		evict    bool
 	)
 
-	c.stats.Insertion()
+	c.stats.insertion()
 
 	if index, evictkey, evict = c.cachemap.Insert(key); evict {
-		c.stats.Eviction()
+		c.stats.eviction()
 		delete(c.addressmap, evictkey)
 	}
 
@@ -164,10 +164,10 @@ func (c *Cache) put(key uint64) (index uint64) {
 
 func (c *Cache) get(key uint64) (index uint64, ok bool) {
 
-	c.stats.Read()
+	c.stats.read()
 
 	if index, ok = c.addressmap[key]; ok {
-		c.stats.ReadHit()
+		c.stats.readHit()
 		c.cachemap.Using(index)
 	}
 
@@ -175,13 +175,13 @@ func (c *Cache) get(key uint64) (index uint64, ok bool) {
 }
 
 func (c *Cache) String() string {
-	return c.stats.String()
+	return c.stats.stats().String()
 }
 
 func (c *Cache) Stats() *CacheStats {
-	return c.stats.Copy()
+	return c.stats.stats()
 }
 
 func (c *Cache) StatsClear() {
-	c.stats = NewCacheStats()
+	c.stats.clear()
 }

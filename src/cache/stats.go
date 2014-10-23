@@ -22,111 +22,52 @@ import (
 )
 
 type CacheStats struct {
-	readhits       uint64
-	invalidatehits uint64
-	reads          uint64
-	evictions      uint64
-	invalidations  uint64
-	insertions     uint64
-	lock           sync.Mutex
+	Readhits       uint64 `json:"readhits"`
+	Invalidatehits uint64 `json:"invalidatehits"`
+	Reads          uint64 `json:"reads"`
+	Evictions      uint64 `json:"evictions"`
+	Invalidations  uint64 `json:"invalidations"`
+	Insertions     uint64 `json:"insertions"`
 }
 
-func NewCacheStats() *CacheStats {
-	return &CacheStats{}
-}
-
-func (c *CacheStats) readHitRateDelta(prev *CacheStats) float64 {
-	reads := c.reads - prev.reads
-	readhits := c.readhits - prev.readhits
-	if reads == 0 {
+func (c *CacheStats) ReadHitRateDelta(prev *CacheStats) float64 {
+	Reads := c.Reads - prev.Reads
+	Readhits := c.Readhits - prev.Readhits
+	if Reads == 0 {
 		return 0.0
 	} else {
-		return float64(readhits) / float64(reads)
+		return float64(Readhits) / float64(Reads)
 	}
 }
 
-func (c *CacheStats) invalidateHitRateDelta(prev *CacheStats) float64 {
-	invalidations := c.invalidations - prev.invalidations
-	invalidatehits := c.invalidatehits - prev.invalidatehits
-	if invalidations == 0 {
+func (c *CacheStats) InvalidateHitRateDelta(prev *CacheStats) float64 {
+	Invalidations := c.Invalidations - prev.Invalidations
+	Invalidatehits := c.Invalidatehits - prev.Invalidatehits
+	if Invalidations == 0 {
 		return 0.0
 	} else {
-		return float64(invalidatehits) / float64(invalidations)
+		return float64(Invalidatehits) / float64(Invalidations)
 	}
 }
 
-func (c *CacheStats) readHitRate() float64 {
-	if c.reads == 0 {
+func (c *CacheStats) ReadHitRate() float64 {
+	if c.Reads == 0 {
 		return 0.0
 	} else {
-		return float64(c.readhits) / float64(c.reads)
+		return float64(c.Readhits) / float64(c.Reads)
 	}
 }
 
-func (c *CacheStats) invalidateHitRate() float64 {
-	if c.invalidations == 0 {
+func (c *CacheStats) InvalidateHitRate() float64 {
+	if c.Invalidations == 0 {
 		return 0.0
 	} else {
-		return float64(c.invalidatehits) / float64(c.invalidations)
+		return float64(c.Invalidatehits) / float64(c.Invalidations)
 	}
 
-}
-
-func (c *CacheStats) Copy() *CacheStats {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	statscopy := &CacheStats{}
-	*statscopy = *c
-
-	return statscopy
-}
-
-func (c *CacheStats) ReadHit() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.readhits++
-}
-
-func (c *CacheStats) InvalidateHit() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.invalidatehits++
-}
-
-func (c *CacheStats) Read() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.reads++
-}
-
-func (c *CacheStats) Eviction() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.evictions++
-}
-
-func (c *CacheStats) Invalidation() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.invalidations++
-}
-
-func (c *CacheStats) Insertion() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.insertions++
 }
 
 func (c *CacheStats) String() string {
-	c.lock.Lock()
-	defer c.lock.Unlock()
 
 	return fmt.Sprintf(
 		"Read Hit Rate: %.4f\n"+
@@ -137,19 +78,17 @@ func (c *CacheStats) String() string {
 			"Insertions: %d\n"+
 			"Evictions: %d\n"+
 			"Invalidations: %d\n",
-		c.readHitRate(),
-		c.invalidateHitRate(),
-		c.readhits,
-		c.invalidatehits,
-		c.reads,
-		c.insertions,
-		c.evictions,
-		c.invalidations)
+		c.ReadHitRate(),
+		c.InvalidateHitRate(),
+		c.Readhits,
+		c.Invalidatehits,
+		c.Reads,
+		c.Insertions,
+		c.Evictions,
+		c.Invalidations)
 }
 
-func (c *CacheStats) Dump() string {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+func (c *CacheStats) Csv() string {
 
 	return fmt.Sprintf(
 		"%v,"+ // Read Hit Rate 1
@@ -159,20 +98,18 @@ func (c *CacheStats) Dump() string {
 			"%d,"+ // Reads 5
 			"%d,"+ // Insertions 6
 			"%d,"+ // Evictions 7
-			"%d\n", // Invalidations 8
-		c.readHitRate(),
-		c.invalidateHitRate(),
-		c.readhits,
-		c.invalidatehits,
-		c.reads,
-		c.insertions,
-		c.evictions,
-		c.invalidations)
+			"%d", // Invalidations 8
+		c.ReadHitRate(),
+		c.InvalidateHitRate(),
+		c.Readhits,
+		c.Invalidatehits,
+		c.Reads,
+		c.Insertions,
+		c.Evictions,
+		c.Invalidations)
 }
 
-func (c *CacheStats) DumpDelta(prev *CacheStats) string {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+func (c *CacheStats) CsvDelta(prev *CacheStats) string {
 
 	return fmt.Sprintf(
 		"%v,"+ // Read Hit Rate 1
@@ -182,13 +119,100 @@ func (c *CacheStats) DumpDelta(prev *CacheStats) string {
 			"%d,"+ // Reads 5
 			"%d,"+ // Insertions 6
 			"%d,"+ // Evictions 7
-			"%d\n", // Invalidations 8
-		c.readHitRateDelta(prev),
-		c.invalidateHitRateDelta(prev),
-		c.readhits-prev.readhits,
-		c.invalidatehits-prev.invalidatehits,
-		c.reads-prev.reads,
-		c.insertions-prev.insertions,
-		c.evictions-prev.evictions,
-		c.invalidations-prev.invalidations)
+			"%d", // Invalidations 8
+		c.ReadHitRateDelta(prev),
+		c.InvalidateHitRateDelta(prev),
+		c.Readhits-prev.Readhits,
+		c.Invalidatehits-prev.Invalidatehits,
+		c.Reads-prev.Reads,
+		c.Insertions-prev.Insertions,
+		c.Evictions-prev.Evictions,
+		c.Invalidations-prev.Invalidations)
+}
+
+type cachestats struct {
+	readhits       uint64
+	invalidatehits uint64
+	reads          uint64
+	insertions     uint64
+	evictions      uint64
+	invalidations  uint64
+	lock           sync.Mutex
+}
+
+func (c *cachestats) stats() *CacheStats {
+	stats := c.copy()
+
+	return &CacheStats{
+		Readhits:       stats.readhits,
+		Invalidatehits: stats.invalidatehits,
+		Reads:          stats.reads,
+		Evictions:      stats.evictions,
+		Invalidations:  stats.invalidations,
+		Insertions:     stats.insertions,
+	}
+}
+
+func (c *cachestats) clear() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.readhits = 0
+	c.invalidatehits = 0
+	c.reads = 0
+	c.insertions = 0
+	c.evictions = 0
+	c.invalidations = 0
+}
+
+func (c *cachestats) copy() *cachestats {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	statscopy := &cachestats{}
+	*statscopy = *c
+
+	return statscopy
+}
+
+func (c *cachestats) readHit() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.readhits++
+}
+
+func (c *cachestats) invalidateHit() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.invalidatehits++
+}
+
+func (c *cachestats) read() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.reads++
+}
+
+func (c *cachestats) eviction() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.evictions++
+}
+
+func (c *cachestats) invalidation() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.invalidations++
+}
+
+func (c *cachestats) insertion() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.insertions++
 }

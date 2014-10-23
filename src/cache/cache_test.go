@@ -127,6 +127,24 @@ func TestCacheSimple(t *testing.T) {
 	tests.Assert(t, c.stats.invalidations == 2)
 	tests.Assert(t, c.stats.invalidatehits == 1)
 
+	// Check the stats
+	stats := c.Stats()
+	tests.Assert(t, stats.Readhits == c.stats.readhits)
+	tests.Assert(t, stats.Invalidatehits == c.stats.invalidatehits)
+	tests.Assert(t, stats.Reads == c.stats.reads)
+	tests.Assert(t, stats.Evictions == c.stats.evictions)
+	tests.Assert(t, stats.Invalidations == c.stats.invalidations)
+	tests.Assert(t, stats.Insertions == c.stats.insertions)
+
+	// Clear the stats
+	c.StatsClear()
+	tests.Assert(t, 0 == c.stats.readhits)
+	tests.Assert(t, 0 == c.stats.invalidatehits)
+	tests.Assert(t, 0 == c.stats.reads)
+	tests.Assert(t, 0 == c.stats.evictions)
+	tests.Assert(t, 0 == c.stats.invalidations)
+	tests.Assert(t, 0 == c.stats.insertions)
+
 	c.Close()
 }
 
