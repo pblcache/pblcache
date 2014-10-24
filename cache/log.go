@@ -348,7 +348,8 @@ func (c *Log) put(msg *message.Message) error {
 
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
-	godbc.Check(n == len(iopkt.Buffer))
+	godbc.Check(n == len(iopkt.Buffer),
+		fmt.Sprintf("n:%v len:%v", n, len(iopkt.Buffer)))
 	godbc.Check(err == nil)
 
 	c.segment.written = true
