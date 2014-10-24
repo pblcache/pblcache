@@ -18,7 +18,7 @@ package cache
 
 import (
 	"fmt"
-	"github.com/lpabon/buffercache"
+	//"github.com/lpabon/buffercache"
 	"github.com/lpabon/bufferio"
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
@@ -74,10 +74,10 @@ type Log struct {
 	fp             *os.File
 	wrapped        bool
 	stats          *logstats
-	bc             buffercache.BufferCache
-	Msgchan        chan *message.Message
-	quitchan       chan struct{}
-	logreaders     chan *message.Message
+	//bc             buffercache.BufferCache
+	Msgchan    chan *message.Message
+	quitchan   chan struct{}
+	logreaders chan *message.Message
 }
 
 func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64) (*Log, uint64) {
@@ -107,7 +107,7 @@ func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64
 			log.maxentries, log.numsegments, log.size))
 
 	// Create buffer cache
-	log.bc = buffercache.NewClockCache(bcsize, log.blocksize)
+	//log.bc = buffercache.NewClockCache(bcsize, log.blocksize)
 
 	// Incoming message channel
 	log.Msgchan = make(chan *message.Message, 32)
@@ -199,7 +199,7 @@ func (c *Log) logread() {
 		c.stats.StorageHit()
 
 		// Save in buffer cache
-		c.bc.Set(offset, iopkt.Buffer)
+		//c.bc.Set(offset, iopkt.Buffer)
 
 		// Return to caller
 		m.Done()
@@ -344,7 +344,7 @@ func (c *Log) put(msg *message.Message) error {
 	offset := c.offset(iopkt.BlockNum)
 
 	// Buffer cache is a Read-miss cache
-	c.bc.Invalidate(iopkt.BlockNum)
+	//c.bc.Invalidate(iopkt.BlockNum)
 
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
@@ -367,12 +367,14 @@ func (c *Log) get(msg *message.Message) error {
 	iopkt := msg.IoPkt()
 	offset := c.offset(iopkt.BlockNum)
 
-	err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
-	if err == nil {
-		c.stats.BufferHit()
-		msg.Done()
-		return nil
-	}
+	/*
+		err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
+		if err == nil {
+			c.stats.BufferHit()
+			msg.Done()
+			return nil
+		}
+	*/
 
 	// Check if the data is in RAM.  Go through each buffered segment
 	for i := 0; i < c.segmentbuffers; i++ {
@@ -392,7 +394,7 @@ func (c *Log) get(msg *message.Message) error {
 			c.segments[i].lock.RUnlock()
 
 			// Save in buffer cache
-			c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
+			//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
 
 			// Return message
 			msg.Done()
