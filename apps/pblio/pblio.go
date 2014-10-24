@@ -36,6 +36,7 @@ const (
 var (
 	filename, cachefilename       string
 	runtime, cachesize, blocksize int
+	usedirectio                   bool
 )
 
 func init() {
@@ -44,6 +45,7 @@ func init() {
 	flag.IntVar(&cachesize, "cachesize", 8, "\n\tCache size in GB")
 	flag.IntVar(&runtime, "runtime", 300, "\n\tRuntime in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
+	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT")
 }
 
 func main() {
@@ -58,7 +60,13 @@ func main() {
 		return
 	}
 
-	fp, err := os.OpenFile(filename, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
+	var fp *os.File
+	var err error
+	if usedirectio {
+		fp, err = os.OpenFile(filename, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
+	} else {
+		fp, err = os.OpenFile(filename, os.O_RDWR|os.O_EXCL, os.ModePerm)
+	}
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -74,8 +82,10 @@ func main() {
 
 	blocksize_bytes := uint64(blocksize * 1024)
 	fileblocks := uint64(filesize / blocksize_bytes)
+	mbs := make(chan int, 32)
 
 	var wg sync.WaitGroup
+	start := time.Now()
 	for gen := 0; gen < GENERATORS; gen++ {
 		wg.Add(1)
 
@@ -84,7 +94,7 @@ func main() {
 
 			z := zipf.NewZipfWorkload(fileblocks, 65 /* read % */)
 			stop := time.After(time.Second * time.Duration(runtime))
-			buffer := make([]byte, blocksize*1024)
+			buffer := make([]byte, blocksize_bytes)
 
 			for {
 				select {
@@ -93,11 +103,33 @@ func main() {
 				default:
 					block, _ := z.ZipfGenerate()
 					fp.ReadAt(buffer, int64(block*blocksize_bytes))
-					fmt.Printf("%v:", block)
+					mbs <- 1
+					//fmt.Printf("%v:", block)
 				}
 			}
 		}()
 	}
 
+	var mbswg sync.WaitGroup
+	mbswg.Add(1)
+	go func() {
+		defer mbswg.Done()
+		var num_blocks int
+
+		for ioblocks := range mbs {
+			num_blocks += ioblocks
+		}
+		total_duration := time.Now().Sub(start)
+
+		fmt.Printf("Total bandwidth: %.1f MB/s\n",
+			((float64(blocksize_bytes)*
+				float64(num_blocks))/(1024.0*1024.0))/
+				float64(total_duration.Seconds()))
+		fmt.Printf("Seconds: %v\n", total_duration.Seconds())
+		fmt.Printf("IO blocks: %v\n", num_blocks)
+	}()
+
 	wg.Wait()
+	close(mbs)
+	mbswg.Wait()
 }
