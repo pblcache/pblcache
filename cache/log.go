@@ -199,7 +199,9 @@ func (c *Log) logread() {
 		c.stats.StorageHit()
 
 		// Save in buffer cache
-		//c.bc.Set(index, val)
+		c.bc.Set(offset, iopkt.Buffer)
+
+		// Return to caller
 		m.Done()
 	}
 }
@@ -368,6 +370,7 @@ func (c *Log) get(msg *message.Message) error {
 	err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
 	if err == nil {
 		c.stats.BufferHit()
+		msg.Done()
 		return nil
 	}
 
@@ -388,11 +391,11 @@ func (c *Log) get(msg *message.Message) error {
 
 			c.segments[i].lock.RUnlock()
 
-			// Return message
-			msg.Done()
-
 			// Save in buffer cache
 			c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
+
+			// Return message
+			msg.Done()
 
 			return nil
 		}
