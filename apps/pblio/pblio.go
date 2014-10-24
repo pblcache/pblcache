@@ -48,6 +48,8 @@ var (
 		4, 4, 4, 4, 4,
 		8, 8,
 		16, 16,
+		32,
+		64,
 	}
 )
 
@@ -83,8 +85,7 @@ func read(fp *os.File,
 		iopkt := msg.IoPkt()
 		iopkt.Offset = current_offset
 		iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-		godbc.Check(len(iopkt.Buffer) == 4*KB,
-			fmt.Sprintf("Len: %v\n", len(iopkt.Buffer)))
+		godbc.Check(len(iopkt.Buffer)%4*KB == 0)
 		msg.Priv = block
 		c.Msgchan <- msg
 	}
@@ -118,7 +119,7 @@ func read(fp *os.File,
 			iopkt := msg.IoPkt()
 			iopkt.Offset = current_offset
 			iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-			godbc.Check(len(iopkt.Buffer) == 4*KB)
+			godbc.Check(len(iopkt.Buffer)%(4*KB) == 0)
 			msg.Priv = block
 			c.Msgchan <- msg
 		}
@@ -139,16 +140,16 @@ func read(fp *os.File,
 			if !hitmap[block] {
 
 				wg.Add(1)
-				go func() {
+				go func(block int) {
 					defer wg.Done()
 
 					buffer_offset := uint64(block) * blocksize_bytes
 					current_offset := offset + buffer_offset
 					b := buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-					godbc.Check(len(b) == 4*KB)
+					godbc.Check(len(b)%(4*KB) == 0)
 					fp.ReadAt(b, int64(current_offset))
 					cache_sput(c, current_offset, b)
-				}()
+				}(block)
 
 			}
 		}
@@ -282,7 +283,7 @@ func main() {
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			z := zipf.NewZipfWorkload(fileblocks, 65 /* read % */)
 			stop := time.After(time.Second * time.Duration(runtime))
-			buffer := make([]byte, blocksize_bytes*16 /*max in smix*/)
+			buffer := make([]byte, blocksize_bytes*64 /*max in smix*/)
 
 			for {
 				select {
@@ -292,32 +293,20 @@ func main() {
 					block, isread := z.ZipfGenerate()
 					offset := block * blocksize_bytes
 					nblocks := smix(r)
-					nblocks = 1
 
 					if isread {
 						if c != nil {
 							read(fp, c, offset,
 								blocksize_bytes, nblocks,
-								buffer[:uint64(nblocks)*blocksize_bytes])
+								buffer[0:uint64(nblocks)*blocksize_bytes])
 						} else {
-							fp.ReadAt(buffer[:uint64(nblocks)*blocksize_bytes], int64(offset))
+							fp.ReadAt(buffer[0:uint64(nblocks)*blocksize_bytes], int64(offset))
 						}
-						/*
-							// Check cache
-							err := cache_sget(c, offset, buffer)
-							if err != nil {
-								// Not in cache, get from storage
-								fp.ReadAt(buffer, int64(offset))
-
-								// Now we store in cache
-								cache_sput(c, offset, buffer)
-							}
-						*/
 						mbs <- nblocks
 					} else {
 						cache_sinval(c, offset)
-						fp.WriteAt(buffer[:blocksize_bytes], int64(offset))
-						cache_sput(c, offset, buffer[:blocksize_bytes])
+						fp.WriteAt(buffer[0:blocksize_bytes], int64(offset))
+						cache_sput(c, offset, buffer[0:blocksize_bytes])
 						mbs <- 1
 					}
 				}
