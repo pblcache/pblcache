@@ -31,16 +31,16 @@ import (
 )
 
 const (
-	GENERATORS = 128
-	KB         = 1024
-	MB         = 1024 * KB
-	GB         = 1024 * MB
+	KB = 1024
+	MB = 1024 * KB
+	GB = 1024 * MB
 )
 
 var (
-	filename, cachefilename       string
-	runtime, cachesize, blocksize int
-	usedirectio                   bool
+	filename, cachefilename string
+	runtime, cachesize      int
+	blocksize, iogenerators int
+	usedirectio             bool
 
 	// From spc1.c NetApp (BSD-lic)
 	SMIX_LENGTHS = []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -59,11 +59,84 @@ func init() {
 	flag.IntVar(&cachesize, "cachesize", 8, "\n\tCache size in GB")
 	flag.IntVar(&runtime, "runtime", 300, "\n\tRuntime in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
-	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT")
+	flag.IntVar(&iogenerators, "iogenerators", 64, "\n\tNumber of io generators")
+	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on filename")
 }
 
 func smix(r *rand.Rand) int {
 	return SMIX_LENGTHS[r.Intn(len(SMIX_LENGTHS))]
+}
+
+func write(fp *os.File,
+	c *cache.Cache,
+	offset, blocksize_bytes uint64,
+	nblocks int,
+	buffer []byte) {
+
+	godbc.Require(len(buffer)%(4*KB) == 0)
+	godbc.Require(blocksize_bytes%(4*KB) == 0)
+
+	here := make(chan *message.Message, nblocks)
+
+	// Send invalidates for each block
+	msgs := nblocks
+	for block := 0; block < nblocks; block++ {
+		msg := message.NewMsgInvalidate()
+		msg.RetChan = here
+
+		buffer_offset := uint64(block) * blocksize_bytes
+		current_offset := offset + buffer_offset
+		iopkt := msg.IoPkt()
+		iopkt.Offset = current_offset
+
+		msg.TimeStart()
+		c.Msgchan <- msg
+	}
+
+	for m := range here {
+		if false {
+			// Add stats
+			m.TimeElapsed()
+		}
+
+		msgs--
+		if msgs == 0 {
+			break
+		}
+	}
+
+	// Write to storage back end
+	// :TODO: check return status
+	fp.WriteAt(buffer, int64(offset))
+
+	// Now write to cache
+	msgs = nblocks
+	for block := 0; block < nblocks; block++ {
+		msg := message.NewMsgPut()
+		msg.RetChan = here
+
+		buffer_offset := uint64(block) * blocksize_bytes
+		current_offset := offset + buffer_offset
+		iopkt := msg.IoPkt()
+		iopkt.Offset = current_offset
+		iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
+		godbc.Check(len(iopkt.Buffer)%4*KB == 0)
+		msg.Priv = block
+		c.Msgchan <- msg
+	}
+
+	for m := range here {
+		if false {
+			// Add stats
+			m.TimeElapsed()
+		}
+
+		msgs--
+		if msgs == 0 {
+			break
+		}
+	}
+
 }
 
 func read(fp *os.File,
@@ -72,8 +145,10 @@ func read(fp *os.File,
 	nblocks int,
 	buffer []byte) {
 
-	here := make(chan *message.Message, nblocks)
 	godbc.Require(len(buffer)%(4*KB) == 0)
+	godbc.Require(blocksize_bytes%(4*KB) == 0)
+
+	here := make(chan *message.Message, nblocks)
 
 	msgs := nblocks
 	for block := 0; block < nblocks; block++ {
@@ -255,15 +330,19 @@ func main() {
 	var c *cache.Cache
 	var log *cache.Log
 	var logblocks uint64
+
+	// Determine if we need to use the cache
 	if cachefilename != "" {
 		fmt.Printf("Using %s as the cache\n", cachefilename)
+
+		// Create log
 		log, logblocks = cache.NewLog(cachefilename,
 			uint64(cachesize*GB)/blocksize_bytes,
 			blocksize_bytes,
 			(512*KB)/blocksize_bytes,
-			uint64(cachesize*GB)/1000)
-		//n := message.NewNullTerminator()
-		//n.Start()
+			0 /* buffer cache has been removed for now */)
+
+		// Connect cache metadata with log
 		c = cache.NewCache(logblocks, log.Msgchan)
 	} else {
 		fmt.Println("No cache set")
@@ -274,7 +353,7 @@ func main() {
 
 	// Start IO generators
 	var wg sync.WaitGroup
-	for gen := 0; gen < GENERATORS; gen++ {
+	for gen := 0; gen < iogenerators; gen++ {
 		wg.Add(1)
 
 		go func() {
@@ -304,10 +383,14 @@ func main() {
 						}
 						mbs <- nblocks
 					} else {
-						cache_sinval(c, offset)
-						fp.WriteAt(buffer[0:blocksize_bytes], int64(offset))
-						cache_sput(c, offset, buffer[0:blocksize_bytes])
-						mbs <- 1
+						if c != nil {
+							write(fp, c, offset,
+								blocksize_bytes, nblocks,
+								buffer[0:uint64(nblocks)*blocksize_bytes])
+						} else {
+							fp.WriteAt(buffer[0:blocksize_bytes], int64(offset))
+						}
+						mbs <- nblocks
 					}
 				}
 			}
