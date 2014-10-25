@@ -40,6 +40,7 @@ var (
 	filename, cachefilename string
 	runtime, cachesize      int
 	blocksize, iogenerators int
+	reads                   int
 	usedirectio             bool
 
 	// From spc1.c NetApp (BSD-lic)
@@ -60,6 +61,7 @@ func init() {
 	flag.IntVar(&runtime, "runtime", 300, "\n\tRuntime in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
 	flag.IntVar(&iogenerators, "iogenerators", 64, "\n\tNumber of io generators")
+	flag.IntVar(&reads, "reads", 65, "\n\tRead percentage (0-100)")
 	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on filename")
 }
 
@@ -300,6 +302,11 @@ func main() {
 		return
 	}
 
+	if (0 > reads) || (reads > 100) {
+		fmt.Printf("Invalid value for reads")
+		return
+	}
+
 	// Open file
 	var fp *os.File
 	var err error
@@ -360,7 +367,7 @@ func main() {
 			defer wg.Done()
 
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			z := zipf.NewZipfWorkload(fileblocks, 65 /* read % */)
+			z := zipf.NewZipfWorkload(fileblocks, reads /* read % */)
 			stop := time.After(time.Second * time.Duration(runtime))
 			buffer := make([]byte, blocksize_bytes*64 /*max in smix*/)
 
