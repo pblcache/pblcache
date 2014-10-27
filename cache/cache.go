@@ -35,7 +35,8 @@ type Cache struct {
 }
 
 var (
-	ErrNotFound = errors.New("Block not found")
+	ErrNotFound  = errors.New("None of the blocks where found")
+	ErrSomeFound = errors.New("Only some of the blocks where found")
 )
 
 func NewCache(blocks uint64, pipeline chan *message.Message) *Cache {
@@ -99,13 +100,34 @@ func (c *Cache) server() {
 					// Send to next one in line
 					c.pipeline <- msg
 				case message.MsgGet:
-					// Get
-					if index, ok := c.get(io.Offset); ok {
-						io.BlockNum = index
+					hitmap := make([]bool, io.Nblocks)
+					hits := 0
+					for block := 0; block < io.Nblocks; block++ {
+						// Get
+						current_offset := io.Offset + uint64(block*4096)
+						if index, ok := c.get(current_offset); ok {
+							m := message.NewMsgGet()
+							m.RetChan = msg.RetChan
 
-						// Send to next one in line
-						c.pipeline <- msg
+							mio := m.IoPkt()
+							mio.Offset = current_offset
+							mio.BlockNum = index
+							mio.Buffer = io.Buffer[uint64(block*4096):uint64(block*4096+4096)]
+							mio.Nblocks = 1
+
+							// Send to next one in line
+							c.pipeline <- m
+							hitmap[block] = true
+							hits++
+						}
+					}
+
+					if hits > 0 {
+						// Some hit. Return hit map
+						m := message.NewMsgHitmap(hitmap, hits, msg.RetChan)
+						m.Done()
 					} else {
+						// None hit
 						msg.Err = ErrNotFound
 						msg.Done()
 					}

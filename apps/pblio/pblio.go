@@ -44,13 +44,25 @@ var (
 	usedirectio             bool
 
 	// From spc1.c NetApp (BSD-lic)
-	SMIX_LENGTHS = []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-		2, 2, 2, 2, 2, 2,
+	/*
+		SMIX_LENGTHS = []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+			2, 2, 2, 2, 2, 2,
+			4, 4, 4, 4, 4,
+			8, 8,
+			16, 16,
+			32,
+			64,
+		}
+	*/
+	SMIX_LENGTHS = []int{16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+		8, 8, 8, 8, 8, 8,
 		4, 4, 4, 4, 4,
-		8, 8,
-		16, 16,
-		32,
-		64,
+		2, 2,
+		1, 1,
+		32, 32,
+		64, 64,
+		128,
+		256,
 	}
 )
 
@@ -141,6 +153,97 @@ func write(fp *os.File,
 
 }
 
+func read2(fp *os.File,
+	c *cache.Cache,
+	offset, blocksize_bytes uint64,
+	nblocks int,
+	buffer []byte) {
+
+	godbc.Require(len(buffer)%(4*KB) == 0)
+	godbc.Require(blocksize_bytes%(4*KB) == 0)
+
+	here := make(chan *message.Message, nblocks)
+	msg := message.NewMsgGet()
+	msg.RetChan = here
+	iopkt := msg.IoPkt()
+	iopkt.Buffer = buffer
+	iopkt.Offset = offset
+	iopkt.Nblocks = nblocks
+	c.Msgchan <- msg
+
+	blocks := nblocks
+	for msg := range here {
+		switch msg.Type {
+		case message.MsgHitmap:
+			// Some or all found
+			hitpkt := msg.HitmapPkt()
+			if hitpkt.Hits != nblocks {
+				// Read from storage the ones that did not have
+				// in the hit map.
+				var wg sync.WaitGroup
+				for block := 0; block < nblocks; block++ {
+					if !hitpkt.Hitmap[block] {
+
+						wg.Add(1)
+						go func(block int) {
+							defer wg.Done()
+
+							buffer_offset := uint64(block) * blocksize_bytes
+							current_offset := offset + buffer_offset
+							b := buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
+							godbc.Check(len(b)%(4*KB) == 0)
+							fp.ReadAt(b, int64(current_offset))
+
+							m := message.NewMsgPut()
+							m.RetChan = here
+							iopkt := m.IoPkt()
+							iopkt.Offset = current_offset
+							iopkt.Buffer = b
+							c.Msgchan <- m
+
+						}(block)
+					}
+				}
+				wg.Wait()
+			}
+
+		case message.MsgGet:
+			if msg.Err != nil {
+				// None found
+				// Read the whole thing from backend
+				fp.ReadAt(buffer, int64(offset))
+
+				// Insert each one into cache
+				for block := 0; block < nblocks; block++ {
+					m := message.NewMsgPut()
+					m.RetChan = here
+
+					buffer_offset := uint64(block) * blocksize_bytes
+					current_offset := offset + buffer_offset
+					iopkt := m.IoPkt()
+					iopkt.Offset = current_offset
+					iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
+					godbc.Check(len(iopkt.Buffer)%(4*KB) == 0)
+					m.Priv = block
+					c.Msgchan <- m
+				}
+			} else {
+				// We received one of the messages with data
+				// from the cache
+				blocks--
+				if blocks == 0 {
+					return
+				}
+			}
+		case message.MsgPut:
+			blocks--
+			if blocks == 0 {
+				return
+			}
+		}
+	}
+}
+
 func read(fp *os.File,
 	c *cache.Cache,
 	offset, blocksize_bytes uint64,
@@ -150,6 +253,7 @@ func read(fp *os.File,
 	godbc.Require(len(buffer)%(4*KB) == 0)
 	godbc.Require(blocksize_bytes%(4*KB) == 0)
 
+	hitmap := make([]bool, nblocks)
 	here := make(chan *message.Message, nblocks)
 
 	msgs := nblocks
@@ -167,7 +271,6 @@ func read(fp *os.File,
 		c.Msgchan <- msg
 	}
 
-	hitmap := make([]bool, nblocks)
 	anyhit := false
 	for m := range here {
 		msgs--
@@ -180,36 +283,39 @@ func read(fp *os.File,
 			break
 		}
 	}
+	anyhit = false
 
 	if anyhit == false {
 		// Read the whole thing from backend
 		fp.ReadAt(buffer, int64(offset))
 
-		// Insert each one into cache
-		msgs = nblocks
-		for block := 0; block < nblocks; block++ {
-			msg := message.NewMsgPut()
-			msg.RetChan = here
+		/*
+			// Insert each one into cache
+			msgs = nblocks
+			for block := 0; block < nblocks; block++ {
+				msg := message.NewMsgPut()
+				msg.RetChan = here
 
-			buffer_offset := uint64(block) * blocksize_bytes
-			current_offset := offset + buffer_offset
-			iopkt := msg.IoPkt()
-			iopkt.Offset = current_offset
-			iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-			godbc.Check(len(iopkt.Buffer)%(4*KB) == 0)
-			msg.Priv = block
-			c.Msgchan <- msg
-		}
+				buffer_offset := uint64(block) * blocksize_bytes
+				current_offset := offset + buffer_offset
+				iopkt := msg.IoPkt()
+				iopkt.Offset = current_offset
+				iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
+				godbc.Check(len(iopkt.Buffer)%(4*KB) == 0)
+				msg.Priv = block
+				c.Msgchan <- msg
+			}
 
-		for m := range here {
-			msgs--
-			if msgs == 0 {
-				break
+			for m := range here {
+				msgs--
+				if msgs == 0 {
+					break
+				}
+				if m.Err != nil {
+					fmt.Printf("ERROR inserting to cache\n")
+				}
 			}
-			if m.Err != nil {
-				fmt.Printf("ERROR inserting to cache\n")
-			}
-		}
+		*/
 
 	} else {
 		var wg sync.WaitGroup
@@ -331,7 +437,7 @@ func main() {
 	// Setup number of blocks
 	blocksize_bytes := uint64(blocksize * KB)
 	fileblocks := uint64(filesize / blocksize_bytes)
-	mbs := make(chan int, 32)
+	mbs := make(chan int, iogenerators)
 
 	// Open cache
 	var c *cache.Cache
@@ -346,7 +452,7 @@ func main() {
 		log, logblocks = cache.NewLog(cachefilename,
 			uint64(cachesize*GB)/blocksize_bytes,
 			blocksize_bytes,
-			(512*KB)/blocksize_bytes,
+			(1024*KB)/blocksize_bytes,
 			0 /* buffer cache has been removed for now */)
 
 		// Connect cache metadata with log
@@ -366,10 +472,10 @@ func main() {
 		go func() {
 			defer wg.Done()
 
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
+			// r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			z := zipf.NewZipfWorkload(fileblocks, reads /* read % */)
 			stop := time.After(time.Second * time.Duration(runtime))
-			buffer := make([]byte, blocksize_bytes*64 /*max in smix*/)
+			buffer := make([]byte, blocksize_bytes*256 /*max in smix*/)
 
 			for {
 				select {
@@ -378,11 +484,11 @@ func main() {
 				default:
 					block, isread := z.ZipfGenerate()
 					offset := block * blocksize_bytes
-					nblocks := smix(r)
+					nblocks := 16 //smix(r)
 
 					if isread {
 						if c != nil {
-							read(fp, c, offset,
+							read2(fp, c, offset,
 								blocksize_bytes, nblocks,
 								buffer[0:uint64(nblocks)*blocksize_bytes])
 						} else {
@@ -395,7 +501,7 @@ func main() {
 								blocksize_bytes, nblocks,
 								buffer[0:uint64(nblocks)*blocksize_bytes])
 						} else {
-							fp.WriteAt(buffer[0:blocksize_bytes], int64(offset))
+							fp.WriteAt(buffer[0:uint64(nblocks)*blocksize_bytes], int64(offset))
 						}
 						mbs <- nblocks
 					}

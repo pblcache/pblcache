@@ -28,6 +28,7 @@ const (
 	MsgShutdown
 	MsgPut
 	MsgGet
+	MsgHitmap
 	MsgInvalidate
 	MsgStats
 	MsgObjCreate
@@ -59,4 +60,24 @@ func (m *Message) TimeElapsed() time.Duration {
 func (m *Message) Done() {
 	godbc.Require(m.RetChan != nil)
 	m.RetChan <- m
+}
+
+type HitmapPkt struct {
+	Hitmap []bool
+	Hits   int
+}
+
+func NewMsgHitmap(h []bool, hits int, rc chan *Message) *Message {
+	return &Message{
+		Type:    MsgHitmap,
+		RetChan: rc,
+		Pkg: &HitmapPkt{
+			Hitmap: h,
+			Hits:   hits,
+		},
+	}
+}
+
+func (m *Message) HitmapPkt() *HitmapPkt {
+	return m.Pkg.(*HitmapPkt)
 }

@@ -34,7 +34,7 @@ const (
 	GB = 1024 * MB
 	TB = 1024 * GB
 
-	fdirectio       = false
+	fdirectio       = true
 	fsegmentbuffers = 32
 	fsegmentsize    = 1024
 )

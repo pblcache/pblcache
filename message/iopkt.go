@@ -28,12 +28,17 @@ type IoPkt struct {
 	// Block number on the Log to read
 	// from or write to
 	BlockNum uint64
+
+	// Number of blocks
+	Nblocks int
 }
 
 func newio(msgtype MsgType) *Message {
 	return &Message{
 		Type: msgtype,
-		Pkg:  &IoPkt{},
+		Pkg: &IoPkt{
+			Nblocks: 1,
+		},
 	}
 }
 
