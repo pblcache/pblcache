@@ -382,14 +382,15 @@ func (c *Log) get(msg *message.Message) error {
 	orig_nblocks := iopkt.Nblocks
 	for block := 0; block < iopkt.Nblocks; block++ {
 		ramhit := false
-		offset := c.offset(iopkt.BlockNum + uint64(block))
+		blocknumber := iopkt.BlockNum + uint64(block)
+		offset := c.offset(blocknumber)
 		fmt.Print("c")
 
 		// Check if the data is in RAM.  Go through each buffered segment
 		for i := 0; i < c.segmentbuffers; i++ {
 
 			c.segments[i].lock.RLock()
-			if c.inRange(iopkt.BlockNum, &c.segments[i]) {
+			if c.inRange(blocknumber, &c.segments[i]) {
 
 				ramhit = true
 				n, err = c.segments[i].data.ReadAt(iopkt.Buffer[c.blocksize*uint64(block):uint64(block+1)*c.blocksize],
