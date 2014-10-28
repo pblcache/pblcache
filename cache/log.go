@@ -192,9 +192,11 @@ func (c *Log) logread() {
 		end := time.Now()
 		c.stats.ReadTimeRecord(end.Sub(start))
 
-		godbc.Check(n == len(iopkt.Buffer),
+		godbc.Check(n == len(iopkt.Buffer))
+		/*
 			fmt.Sprintf("Read %v expected %v from location %v index %v",
 				n, iopkt.Buffer, offset, iopkt.BlockNum))
+		*/
 		godbc.Check(err == nil)
 		c.stats.StorageHit()
 
@@ -223,7 +225,6 @@ func (c *Log) server() {
 
 			select {
 			case msg := <-c.Msgchan:
-				fmt.Printf("logs|%d:", msg.Type)
 				switch msg.Type {
 				case message.MsgPut:
 					c.put(msg)
@@ -349,8 +350,10 @@ func (c *Log) put(msg *message.Message) error {
 
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
-	godbc.Check(n == len(iopkt.Buffer),
+	godbc.Check(n == len(iopkt.Buffer))
+	/*
 		fmt.Sprintf("n:%v len:%v", n, len(iopkt.Buffer)))
+	*/
 	godbc.Check(err == nil)
 
 	c.segment.written = true
@@ -367,7 +370,6 @@ func (c *Log) get(msg *message.Message) error {
 	var err error
 
 	iopkt := msg.IoPkt()
-	fmt.Printf("log.get returning %d blocks:", iopkt.Nblocks)
 
 	/*
 		err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
@@ -384,7 +386,6 @@ func (c *Log) get(msg *message.Message) error {
 		ramhit := false
 		blocknumber := iopkt.BlockNum + uint64(block)
 		offset := c.offset(blocknumber)
-		fmt.Print("c")
 
 		// Check if the data is in RAM.  Go through each buffered segment
 		for i := 0; i < c.segmentbuffers; i++ {
@@ -397,11 +398,12 @@ func (c *Log) get(msg *message.Message) error {
 					int64(offset-c.segments[i].offset))
 
 				godbc.Check(err == nil, err, block, offset, i)
-				godbc.Check(uint64(n) == c.blocksize,
+				godbc.Check(uint64(n) == c.blocksize)
+				/*
 					fmt.Sprintf("Read %v expected:%v from location:%v iopkt.BlockNum:%v",
 						n, c.blocksize, offset, iopkt.BlockNum))
+				*/
 				c.stats.RamHit()
-				fmt.Print(".")
 
 				// Save in buffer cache
 				//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
@@ -418,7 +420,6 @@ func (c *Log) get(msg *message.Message) error {
 		if !ramhit {
 			orig_nblocks--
 			if readmsg == nil {
-				fmt.Print("A")
 				readmsg = message.NewMsgGet()
 				readmsg.RetChan = msg.RetChan
 				io := readmsg.IoPkt()
@@ -426,15 +427,12 @@ func (c *Log) get(msg *message.Message) error {
 				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
 				io.Nblocks = 1
 			} else {
-				fmt.Print("B")
 				io := readmsg.IoPkt()
 				io.Nblocks++
 				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
 			}
 		} else {
-			fmt.Print("C")
 			if readmsg != nil {
-				fmt.Print("CXX")
 				c.logreaders <- readmsg
 				readmsg = nil
 			}
@@ -442,12 +440,7 @@ func (c *Log) get(msg *message.Message) error {
 	}
 
 	if readmsg != nil {
-		io := readmsg.IoPkt()
-		fmt.Printf("<<Blocks %d:", io.Nblocks)
 		c.logreaders <- readmsg
-		readmsg = nil
-	} else {
-		fmt.Printf("---------------------")
 	}
 
 	if iopkt.Nblocks != orig_nblocks {
@@ -455,9 +448,9 @@ func (c *Log) get(msg *message.Message) error {
 		iopkt.Nblocks = orig_nblocks
 	}
 
-	fmt.Printf("<<**Blocks %d:", iopkt.Nblocks)
-
-	msg.Done()
+	if iopkt.Nblocks > 0 {
+		msg.Done()
+	}
 
 	return nil
 }

@@ -18,7 +18,6 @@ package cache
 
 import (
 	"errors"
-	"fmt"
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
 	"sync"
@@ -129,7 +128,6 @@ func (c *Cache) server() {
 							hitmap[block] = true
 							hits++
 							if m == nil {
-								fmt.Print("AA")
 								m = message.NewMsgGet()
 								m.RetChan = msg.RetChan
 								m.Priv = msg.Priv
@@ -139,16 +137,13 @@ func (c *Cache) server() {
 								mio.BlockNum = index
 								mblock = block
 							} else {
-								fmt.Print("cA")
 								numblocks := block - mblock
 								if (m.IoPkt().BlockNum+uint64(numblocks)) == index && hitmap[block-1] == true {
-									fmt.Print("dA")
 									// It is the next in both the cache and storage device
 									mio := m.IoPkt()
 									mio.Buffer = io.Buffer[uint64(mblock)*c.blocksize : uint64(mblock+numblocks+1)*c.blocksize]
 									mio.Nblocks++
 								} else {
-									fmt.Print("fA")
 									// Send the previous one
 									c.pipeline <- m
 
@@ -169,10 +164,7 @@ func (c *Cache) server() {
 
 					// Check if we have one more message
 					if m != nil {
-						fmt.Print("<-m")
 						c.pipeline <- m
-					} else {
-						fmt.Print("XXX")
 					}
 
 					if hits > 0 {
