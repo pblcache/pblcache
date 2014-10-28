@@ -147,8 +147,8 @@ func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64
 	}
 	godbc.Check(err == nil)
 
-	//err = syscall.Fallocate(int(log.fp.Fd()), 0, 0, int64(blocks*blocksize))
-	//godbc.Check(err == nil)
+	err = syscall.Fallocate(int(log.fp.Fd()), 0, 0, int64(blocks*blocksize))
+	godbc.Check(err == nil)
 
 	godbc.Ensure(log.size != 0)
 	godbc.Ensure(log.blocksize == blocksize)
@@ -192,9 +192,9 @@ func (c *Log) logread() {
 		end := time.Now()
 		c.stats.ReadTimeRecord(end.Sub(start))
 
-		godbc.Check(uint64(n) == c.blocksize,
+		godbc.Check(n == len(iopkt.Buffer),
 			fmt.Sprintf("Read %v expected %v from location %v index %v",
-				n, c.blocksize, offset, iopkt.BlockNum))
+				n, iopkt.Buffer, offset, iopkt.BlockNum))
 		godbc.Check(err == nil)
 		c.stats.StorageHit()
 
@@ -223,6 +223,7 @@ func (c *Log) server() {
 
 			select {
 			case msg := <-c.Msgchan:
+				fmt.Printf("logs|%d:", msg.Type)
 				switch msg.Type {
 				case message.MsgPut:
 					c.put(msg)
@@ -366,6 +367,7 @@ func (c *Log) get(msg *message.Message) error {
 	var err error
 
 	iopkt := msg.IoPkt()
+	fmt.Printf("log.get returning %d blocks:", iopkt.Nblocks)
 
 	/*
 		err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
@@ -381,6 +383,7 @@ func (c *Log) get(msg *message.Message) error {
 	for block := 0; block < iopkt.Nblocks; block++ {
 		ramhit := false
 		offset := c.offset(iopkt.BlockNum + uint64(block))
+		fmt.Print("c")
 
 		// Check if the data is in RAM.  Go through each buffered segment
 		for i := 0; i < c.segmentbuffers; i++ {
@@ -389,15 +392,15 @@ func (c *Log) get(msg *message.Message) error {
 			if c.inRange(iopkt.BlockNum, &c.segments[i]) {
 
 				ramhit = true
-				n, err = c.segments[i].data.ReadAt(iopkt.Buffer, int64(offset-c.segments[i].offset))
+				n, err = c.segments[i].data.ReadAt(iopkt.Buffer[c.blocksize*uint64(block):uint64(block+1)*c.blocksize],
+					int64(offset-c.segments[i].offset))
 
-				godbc.Check(err == nil)
+				godbc.Check(err == nil, err, block, offset, i)
 				godbc.Check(uint64(n) == c.blocksize,
 					fmt.Sprintf("Read %v expected:%v from location:%v iopkt.BlockNum:%v",
 						n, c.blocksize, offset, iopkt.BlockNum))
 				c.stats.RamHit()
-
-				c.segments[i].lock.RUnlock()
+				fmt.Print(".")
 
 				// Save in buffer cache
 				//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
@@ -414,19 +417,23 @@ func (c *Log) get(msg *message.Message) error {
 		if !ramhit {
 			orig_nblocks--
 			if readmsg == nil {
-				readmsg := message.NewMsgGet()
-				*readmsg = *msg
+				fmt.Print("A")
+				readmsg = message.NewMsgGet()
+				readmsg.RetChan = msg.RetChan
 				io := readmsg.IoPkt()
 				io.BlockNum = iopkt.BlockNum + uint64(block)
 				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
 				io.Nblocks = 1
 			} else {
+				fmt.Print("B")
 				io := readmsg.IoPkt()
 				io.Nblocks++
 				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
 			}
 		} else {
+			fmt.Print("C")
 			if readmsg != nil {
+				fmt.Print("CXX")
 				c.logreaders <- readmsg
 				readmsg = nil
 			}
@@ -434,14 +441,20 @@ func (c *Log) get(msg *message.Message) error {
 	}
 
 	if readmsg != nil {
+		io := readmsg.IoPkt()
+		fmt.Printf("<<Blocks %d:", io.Nblocks)
 		c.logreaders <- readmsg
 		readmsg = nil
+	} else {
+		fmt.Printf("---------------------")
 	}
 
 	if iopkt.Nblocks != orig_nblocks {
 		msg.Err = ErrPending
 		iopkt.Nblocks = orig_nblocks
 	}
+
+	fmt.Printf("<<**Blocks %d:", iopkt.Nblocks)
 
 	msg.Done()
 

@@ -18,6 +18,7 @@ package cache
 
 import (
 	"errors"
+	"fmt"
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
 	"sync"
@@ -128,7 +129,8 @@ func (c *Cache) server() {
 							hitmap[block] = true
 							hits++
 							if m == nil {
-								m := message.NewMsgGet()
+								fmt.Print("AA")
+								m = message.NewMsgGet()
 								m.RetChan = msg.RetChan
 								m.Priv = msg.Priv
 								mio := m.IoPkt()
@@ -137,21 +139,24 @@ func (c *Cache) server() {
 								mio.BlockNum = index
 								mblock = block
 							} else {
-								mio := m.IoPkt()
+								fmt.Print("cA")
 								numblocks := block - mblock
-								if (mio.BlockNum+uint64(numblocks)) == index && hitmap[block-1] == true {
+								if (m.IoPkt().BlockNum+uint64(numblocks)) == index && hitmap[block-1] == true {
+									fmt.Print("dA")
 									// It is the next in both the cache and storage device
+									mio := m.IoPkt()
 									mio.Buffer = io.Buffer[uint64(mblock)*c.blocksize : uint64(mblock+numblocks+1)*c.blocksize]
 									mio.Nblocks++
 								} else {
+									fmt.Print("fA")
 									// Send the previous one
 									c.pipeline <- m
 
 									// Now make a new one for the current block
-									m := message.NewMsgGet()
+									m = message.NewMsgGet()
 									m.RetChan = msg.RetChan
 									m.Priv = msg.Priv
-									mio = m.IoPkt()
+									mio := m.IoPkt()
 									mio.Offset = current_offset
 									mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block+1)*c.blocksize]
 									mio.BlockNum = index
@@ -164,7 +169,10 @@ func (c *Cache) server() {
 
 					// Check if we have one more message
 					if m != nil {
+						fmt.Print("<-m")
 						c.pipeline <- m
+					} else {
+						fmt.Print("XXX")
 					}
 
 					if hits > 0 {

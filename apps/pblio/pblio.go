@@ -225,21 +225,23 @@ func read2(fp *os.File,
 
 	msgs := nblocks
 	for msg := range here {
+		fmt.Printf("msg <- %d:", msg.Type)
 
 		switch msg.Type {
 		case message.MsgHitmap:
 			// Some or all found
 			hitpkt := msg.HitmapPkt()
+			fmt.Printf("HITS=%d:", hitpkt.Hits)
 			if hitpkt.Hits != nblocks {
 				// Read from storage the ones that did not have
 				// in the hit map.
-				var wg sync.WaitGroup
+				sent := 0
 				for block := 0; block < nblocks; block++ {
 					if !hitpkt.Hitmap[block] {
+						fmt.Print("_^_")
 
-						wg.Add(1)
+						sent++
 						go func(block int) {
-							defer wg.Done()
 
 							// :TODO: Needs to support multiple blocks
 
@@ -249,6 +251,7 @@ func read2(fp *os.File,
 							godbc.Check(len(b)%(4*KB) == 0)
 							fp.ReadAt(b, int64(current_offset))
 
+							fmt.Printf("Put block %v:", current_offset)
 							m := message.NewMsgPut()
 							m.RetChan = here
 							io := m.IoPkt()
@@ -259,7 +262,7 @@ func read2(fp *os.File,
 						}(block)
 					}
 				}
-				wg.Wait()
+				godbc.Check((iopkt.Nblocks-hitpkt.Hits) == sent, iopkt.Nblocks, hitpkt.Hits, sent)
 			}
 
 		case message.MsgGet:
@@ -284,12 +287,15 @@ func read2(fp *os.File,
 			if msg.Err == nil {
 				io := msg.IoPkt()
 				msgs -= io.Nblocks
+				fmt.Printf("put msgs|%d ioblocks|%d:", msgs, io.Nblocks)
 			}
 		}
 
 		if msgs == 0 {
+			fmt.Print("@@")
 			return
 		}
+		fmt.Printf("**Waiting on %d:", msgs)
 	}
 }
 
