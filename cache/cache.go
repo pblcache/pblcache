@@ -24,22 +24,23 @@ import (
 )
 
 type Cache struct {
-	stats      *cachestats
-	cachemap   *CacheMap
-	addressmap map[uint64]uint64
-	blocks     uint64
-	Msgchan    chan *message.Message
-	pipeline   chan *message.Message
-	quitchan   chan struct{}
-	wg         sync.WaitGroup
+	stats             *cachestats
+	cachemap          *CacheMap
+	addressmap        map[uint64]uint64
+	blocks, blocksize uint64
+	Msgchan           chan *message.Message
+	pipeline          chan *message.Message
+	quitchan          chan struct{}
+	wg                sync.WaitGroup
 }
 
 var (
 	ErrNotFound  = errors.New("None of the blocks where found")
 	ErrSomeFound = errors.New("Only some of the blocks where found")
+	ErrPending   = errors.New("New messages where created and are pending")
 )
 
-func NewCache(blocks uint64, pipeline chan *message.Message) *Cache {
+func NewCache(blocks, blocksize uint64, pipeline chan *message.Message) *Cache {
 
 	godbc.Require(blocks > 0)
 	godbc.Require(pipeline != nil)
@@ -47,6 +48,7 @@ func NewCache(blocks uint64, pipeline chan *message.Message) *Cache {
 	cache := &Cache{}
 	cache.blocks = blocks
 	cache.pipeline = pipeline
+	cache.blocksize = blocksize
 
 	cache.stats = &cachestats{}
 	cache.cachemap = NewCacheMap(cache.blocks)
@@ -94,32 +96,75 @@ func (c *Cache) server() {
 				io := msg.IoPkt()
 				switch msg.Type {
 				case message.MsgPut:
-					// PUT
-					io.BlockNum = c.put(io.Offset)
-
-					// Send to next one in line
-					c.pipeline <- msg
-				case message.MsgGet:
-					hitmap := make([]bool, io.Nblocks)
-					hits := 0
-					for block := 0; block < io.Nblocks; block++ {
-						// Get
-						current_offset := io.Offset + uint64(block*4096)
-						if index, ok := c.get(current_offset); ok {
-							m := message.NewMsgGet()
+					if io.Nblocks > 1 {
+						for block := 0; block < io.Nblocks; block++ {
+							m := message.NewMsgPut()
 							m.RetChan = msg.RetChan
 
 							mio := m.IoPkt()
-							mio.Offset = current_offset
-							mio.BlockNum = index
-							mio.Buffer = io.Buffer[uint64(block*4096):uint64(block*4096+4096)]
+							mio.Offset = io.Offset + uint64(block)*c.blocksize
+							mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block)*c.blocksize+c.blocksize]
+							mio.BlockNum = c.put(io.Offset)
 							mio.Nblocks = 1
 
 							// Send to next one in line
 							c.pipeline <- m
+						}
+					} else {
+						io.BlockNum = c.put(io.Offset)
+						c.pipeline <- msg
+					}
+				case message.MsgGet:
+					hitmap := make([]bool, io.Nblocks)
+					hits := 0
+
+					// Create a message
+					var m *message.Message
+					var mblock int
+					for block := 0; block < io.Nblocks; block++ {
+						// Get
+						current_offset := io.Offset + uint64(block)*c.blocksize
+						if index, ok := c.get(current_offset); ok {
 							hitmap[block] = true
 							hits++
+							if m == nil {
+								m := message.NewMsgGet()
+								m.RetChan = msg.RetChan
+								m.Priv = msg.Priv
+								mio := m.IoPkt()
+								mio.Offset = current_offset
+								mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block+1)*c.blocksize]
+								mio.BlockNum = index
+								mblock = block
+							} else {
+								mio := m.IoPkt()
+								numblocks := block - mblock
+								if (mio.BlockNum+uint64(numblocks)) == index && hitmap[block-1] == true {
+									// It is the next in both the cache and storage device
+									mio.Buffer = io.Buffer[uint64(mblock)*c.blocksize : uint64(mblock+numblocks+1)*c.blocksize]
+									mio.Nblocks++
+								} else {
+									// Send the previous one
+									c.pipeline <- m
+
+									// Now make a new one for the current block
+									m := message.NewMsgGet()
+									m.RetChan = msg.RetChan
+									m.Priv = msg.Priv
+									mio = m.IoPkt()
+									mio.Offset = current_offset
+									mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block+1)*c.blocksize]
+									mio.BlockNum = index
+									mblock = block
+								}
+
+							}
 						}
+					}
+
+					// Check if we have one more message
+					if m != nil {
+						c.pipeline <- m
 					}
 
 					if hits > 0 {
@@ -133,8 +178,8 @@ func (c *Cache) server() {
 					}
 
 				case message.MsgInvalidate:
-					if ok := c.invalidate(io.Offset); !ok {
-						msg.Err = ErrNotFound
+					for block := 0; block < io.Nblocks; block++ {
+						c.invalidate(io.Offset + uint64(block)*c.blocksize)
 					}
 					msg.Done()
 

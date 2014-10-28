@@ -81,6 +81,58 @@ func smix(r *rand.Rand) int {
 	return SMIX_LENGTHS[r.Intn(len(SMIX_LENGTHS))]
 }
 
+func write2(fp *os.File,
+	c *cache.Cache,
+	offset, blocksize_bytes uint64,
+	nblocks int,
+	buffer []byte) {
+
+	godbc.Require(len(buffer)%(4*KB) == 0)
+	godbc.Require(blocksize_bytes%(4*KB) == 0)
+
+	here := make(chan *message.Message, nblocks)
+
+	// Send invalidates for each block
+	msg := message.NewMsgInvalidate()
+	msg.RetChan = here
+	iopkt := msg.IoPkt()
+	iopkt.Offset = offset
+	iopkt.Nblocks = nblocks
+
+	c.Msgchan <- msg
+
+	// Write to storage back end
+	// :TODO: check return status
+	fp.WriteAt(buffer, int64(offset))
+
+	// Invalidations should have been done
+	// by now.  Let's make sure.
+	<-here
+
+	// Now write to cache
+	msg = message.NewMsgPut()
+	msg.RetChan = here
+	iopkt = msg.IoPkt()
+	iopkt.Nblocks = nblocks
+	iopkt.Offset = offset
+	iopkt.Buffer = buffer
+	c.Msgchan <- msg
+
+	msgs := nblocks
+	for msg = range here {
+		godbc.Check(msg.Type == message.MsgPut)
+
+		if msg.Err == nil {
+			iopkt := msg.IoPkt()
+			msgs -= iopkt.Nblocks
+		}
+
+		if msgs == 0 {
+			return
+		}
+	}
+}
+
 func write(fp *os.File,
 	c *cache.Cache,
 	offset, blocksize_bytes uint64,
@@ -171,8 +223,9 @@ func read2(fp *os.File,
 	iopkt.Nblocks = nblocks
 	c.Msgchan <- msg
 
-	blocks := nblocks
+	msgs := nblocks
 	for msg := range here {
+
 		switch msg.Type {
 		case message.MsgHitmap:
 			// Some or all found
@@ -188,6 +241,8 @@ func read2(fp *os.File,
 						go func(block int) {
 							defer wg.Done()
 
+							// :TODO: Needs to support multiple blocks
+
 							buffer_offset := uint64(block) * blocksize_bytes
 							current_offset := offset + buffer_offset
 							b := buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
@@ -196,9 +251,9 @@ func read2(fp *os.File,
 
 							m := message.NewMsgPut()
 							m.RetChan = here
-							iopkt := m.IoPkt()
-							iopkt.Offset = current_offset
-							iopkt.Buffer = b
+							io := m.IoPkt()
+							io.Offset = current_offset
+							io.Buffer = b
 							c.Msgchan <- m
 
 						}(block)
@@ -208,38 +263,32 @@ func read2(fp *os.File,
 			}
 
 		case message.MsgGet:
-			if msg.Err != nil {
+			if msg.Err == cache.ErrNotFound {
 				// None found
 				// Read the whole thing from backend
 				fp.ReadAt(buffer, int64(offset))
 
-				// Insert each one into cache
-				for block := 0; block < nblocks; block++ {
-					m := message.NewMsgPut()
-					m.RetChan = here
-
-					buffer_offset := uint64(block) * blocksize_bytes
-					current_offset := offset + buffer_offset
-					iopkt := m.IoPkt()
-					iopkt.Offset = current_offset
-					iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-					godbc.Check(len(iopkt.Buffer)%(4*KB) == 0)
-					m.Priv = block
-					c.Msgchan <- m
-				}
+				m := message.NewMsgPut()
+				m.RetChan = here
+				io := m.IoPkt()
+				io.Offset = offset
+				io.Buffer = buffer
+				io.Nblocks = nblocks
+				c.Msgchan <- m
 			} else {
-				// We received one of the messages with data
-				// from the cache
-				blocks--
-				if blocks == 0 {
-					return
-				}
+				io := msg.IoPkt()
+				msgs -= io.Nblocks
 			}
+
 		case message.MsgPut:
-			blocks--
-			if blocks == 0 {
-				return
+			if msg.Err == nil {
+				io := msg.IoPkt()
+				msgs -= io.Nblocks
 			}
+		}
+
+		if msgs == 0 {
+			return
 		}
 	}
 }
@@ -452,11 +501,11 @@ func main() {
 		log, logblocks = cache.NewLog(cachefilename,
 			uint64(cachesize*GB)/blocksize_bytes,
 			blocksize_bytes,
-			(1024*KB)/blocksize_bytes,
+			(512*KB)/blocksize_bytes,
 			0 /* buffer cache has been removed for now */)
 
 		// Connect cache metadata with log
-		c = cache.NewCache(logblocks, log.Msgchan)
+		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
 	} else {
 		fmt.Println("No cache set")
 	}
@@ -485,6 +534,7 @@ func main() {
 					block, isread := z.ZipfGenerate()
 					offset := block * blocksize_bytes
 					nblocks := 16 //smix(r)
+					isread = true
 
 					if isread {
 						if c != nil {
@@ -497,7 +547,7 @@ func main() {
 						mbs <- nblocks
 					} else {
 						if c != nil {
-							write(fp, c, offset,
+							write2(fp, c, offset,
 								blocksize_bytes, nblocks,
 								buffer[0:uint64(nblocks)*blocksize_bytes])
 						} else {
