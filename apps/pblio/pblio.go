@@ -448,31 +448,7 @@ func cache_sget(c *cache.Cache, offset uint64, buffer []byte) error {
 	}
 }
 
-func main() {
-	flag.Parse()
-
-	if filename == "" {
-		fmt.Print("filename must be set\n")
-		return
-	}
-
-	if (0 > reads) || (reads > 100) {
-		fmt.Printf("Invalid value for reads")
-		return
-	}
-
-	// Open file
-	var fp *os.File
-	var err error
-	if usedirectio {
-		fp, err = os.OpenFile(filename, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
-	} else {
-		fp, err = os.OpenFile(filename, os.O_RDWR|os.O_EXCL, os.ModePerm)
-	}
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+func simluate(fp *os.File, c *cache.Cache) {
 
 	// Get file size
 	filestat, err := fp.Stat()
@@ -486,28 +462,6 @@ func main() {
 	blocksize_bytes := uint64(blocksize * KB)
 	fileblocks := uint64(filesize / blocksize_bytes)
 	mbs := make(chan int, iogenerators)
-
-	// Open cache
-	var c *cache.Cache
-	var log *cache.Log
-	var logblocks uint64
-
-	// Determine if we need to use the cache
-	if cachefilename != "" {
-		fmt.Printf("Using %s as the cache\n", cachefilename)
-
-		// Create log
-		log, logblocks = cache.NewLog(cachefilename,
-			uint64(cachesize*GB)/blocksize_bytes,
-			blocksize_bytes,
-			(512*KB)/blocksize_bytes,
-			0 /* buffer cache has been removed for now */)
-
-		// Connect cache metadata with log
-		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
-	} else {
-		fmt.Println("No cache set")
-	}
 
 	// Start timer
 	start := time.Now()
@@ -580,11 +534,71 @@ func main() {
 	wg.Wait()
 	close(mbs)
 	mbswg.Wait()
+}
+
+func main() {
+	flag.Parse()
+
+	if filename == "" {
+		fmt.Print("filename must be set\n")
+		return
+	}
+
+	if (0 > reads) || (reads > 100) {
+		fmt.Printf("Invalid value for reads")
+		return
+	}
+
+	// Open file
+	var fp *os.File
+	var err error
+	if usedirectio {
+		fp, err = os.OpenFile(filename, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
+	} else {
+		fp, err = os.OpenFile(filename, os.O_RDWR|os.O_EXCL, os.ModePerm)
+	}
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Setup number of blocks
+	blocksize_bytes := uint64(blocksize * KB)
+
+	// Open cache
+	var c *cache.Cache
+	var log *cache.Log
+	var logblocks uint64
+
+	// Determine if we need to use the cache
+	if cachefilename != "" {
+		fmt.Printf("Using %s as the cache\n", cachefilename)
+
+		// Create log
+		log, logblocks = cache.NewLog(cachefilename,
+			uint64(cachesize*GB)/blocksize_bytes,
+			blocksize_bytes,
+			(512*KB)/blocksize_bytes,
+			0 /* buffer cache has been removed for now */)
+
+		// Connect cache metadata with log
+		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
+	} else {
+		fmt.Println("No cache set")
+	}
 
 	if c != nil {
+		fmt.Println("Cache warmup")
+		simluate(fp, c)
+
+		c.StatsClear()
+		fmt.Println("Running simulation...")
+		simluate(fp, c)
 		c.Close()
 		log.Close()
 		fmt.Print(c)
 		fmt.Print(log)
+	} else {
+		simluate(fp, nil)
 	}
 }
