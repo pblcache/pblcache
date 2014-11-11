@@ -32,6 +32,7 @@ type Cache struct {
 	pipeline          chan *message.Message
 	quitchan          chan struct{}
 	wg                sync.WaitGroup
+	lock              sync.Mutex
 }
 
 var (
@@ -73,6 +74,98 @@ func (c *Cache) Close() {
 	c.wg.Wait()
 }
 
+func (c *Cache) create_get_submsg(msg *message.Message,
+	offset, buffer_offset, blocknum uint64,
+	buffer []byte) *message.Message {
+
+	m := message.NewMsgGet()
+	m.RetChan = msg.RetChan
+	m.Priv = msg.Priv
+
+	// Set IoPkt
+	mio := m.IoPkt()
+	mio.Offset = offset
+	mio.Buffer = buffer
+	mio.BlockNum = blocknum
+
+	return m
+}
+
+func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	io := msg.IoPkt()
+	hitmap := make([]bool, io.Nblocks)
+	hits := 0
+
+	// Create a message
+	var m *message.Message
+	var mblock uint64
+	for block := uint64(0); block < uint64(io.Nblocks); block++ {
+		// Get
+		buffer_offset := block * c.blocksize
+		current_offset := io.Offset + buffer_offset
+		if index, ok := c.get(current_offset); ok {
+			hitmap[block] = true
+			hits++
+
+			// Check if we already have a message ready
+			if m == nil {
+
+				// This is the first message, so let's set it up
+				m = c.create_get_submsg(msg,
+					current_offset,
+					buffer_offset,
+					index,
+					io.Buffer[buffer_offset:(block+1)*c.blocksize])
+				mblock = block
+			} else {
+				// Let's check what block we are using starting from the block
+				// setup by the message
+				numblocks := block - mblock
+
+				// If the next block is available on the log after this block, then
+				// we can optimize the read by reading a larger amount from the log.
+				if m.IoPkt().BlockNum+numblocks == index && hitmap[block-1] == true {
+					// It is the next in both the cache and storage device
+					mio := m.IoPkt()
+					mio.Buffer = io.Buffer[mblock*c.blocksize : (mblock+numblocks+1)*c.blocksize]
+					mio.Nblocks++
+				} else {
+					// Send the previous one
+					c.pipeline <- m
+
+					// This is the first message, so let's set it up
+					m = c.create_get_submsg(msg,
+						current_offset,
+						buffer_offset,
+						index,
+						io.Buffer[buffer_offset:(block+1)*c.blocksize])
+					mblock = block
+				}
+
+			}
+		}
+	}
+
+	// Check if we have one more message
+	if m != nil {
+		c.pipeline <- m
+	}
+
+	if hits > 0 {
+		hitmappkt := &message.HitmapPkt{
+			Hitmap: hitmap,
+			Hits:   hits,
+		}
+		return hitmappkt, nil
+	} else {
+		return nil, ErrNotFound
+	}
+}
+
 func (c *Cache) server() {
 	c.wg.Add(1)
 	go func() {
@@ -96,6 +189,7 @@ func (c *Cache) server() {
 				io := msg.IoPkt()
 				switch msg.Type {
 				case message.MsgPut:
+					c.lock.Lock()
 					if io.Nblocks > 1 {
 						for block := 0; block < io.Nblocks; block++ {
 							m := message.NewMsgPut()
@@ -114,74 +208,17 @@ func (c *Cache) server() {
 						io.BlockNum = c.put(io.Offset)
 						c.pipeline <- msg
 					}
+					c.lock.Unlock()
 				case message.MsgGet:
-					hitmap := make([]bool, io.Nblocks)
-					hits := 0
-
-					// Create a message
-					var m *message.Message
-					var mblock int
-					for block := 0; block < io.Nblocks; block++ {
-						// Get
-						current_offset := io.Offset + uint64(block)*c.blocksize
-						if index, ok := c.get(current_offset); ok {
-							hitmap[block] = true
-							hits++
-							if m == nil {
-								m = message.NewMsgGet()
-								m.RetChan = msg.RetChan
-								m.Priv = msg.Priv
-								mio := m.IoPkt()
-								mio.Offset = current_offset
-								mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block+1)*c.blocksize]
-								mio.BlockNum = index
-								mblock = block
-							} else {
-								numblocks := block - mblock
-								if (m.IoPkt().BlockNum+uint64(numblocks)) == index && hitmap[block-1] == true {
-									// It is the next in both the cache and storage device
-									mio := m.IoPkt()
-									mio.Buffer = io.Buffer[uint64(mblock)*c.blocksize : uint64(mblock+numblocks+1)*c.blocksize]
-									mio.Nblocks++
-								} else {
-									// Send the previous one
-									c.pipeline <- m
-
-									// Now make a new one for the current block
-									m = message.NewMsgGet()
-									m.RetChan = msg.RetChan
-									m.Priv = msg.Priv
-									mio := m.IoPkt()
-									mio.Offset = current_offset
-									mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block+1)*c.blocksize]
-									mio.BlockNum = index
-									mblock = block
-								}
-
-							}
-						}
-					}
-
-					// Check if we have one more message
-					if m != nil {
-						c.pipeline <- m
-					}
-
-					if hits > 0 {
-						// Some hit. Return hit map
-						m := message.NewMsgHitmap(hitmap, hits, msg.RetChan)
-						m.Done()
-					} else {
-						// None hit
-						msg.Err = ErrNotFound
-						msg.Done()
-					}
+					c.Get(msg)
 
 				case message.MsgInvalidate:
+					c.lock.Lock()
 					for block := 0; block < io.Nblocks; block++ {
 						c.invalidate(io.Offset + uint64(block)*c.blocksize)
 					}
 					msg.Done()
+					c.lock.Unlock()
 
 					// case Release
 				}

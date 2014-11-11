@@ -81,6 +81,25 @@ func smix(r *rand.Rand) int {
 	return SMIX_LENGTHS[r.Intn(len(SMIX_LENGTHS))]
 }
 
+func readandstore(fp *os.File,
+	c *cache.Cache,
+	offset uint64,
+	nblocks uint64,
+	buffer []byte,
+	retchan chan *message.Message) {
+
+	fp.ReadAt(buffer, int64(offset))
+
+	m := message.NewMsgPut()
+	m.RetChan = retchan
+	io := m.IoPkt()
+	io.Offset = offset
+	io.Buffer = buffer
+	io.Nblocks = int(nblocks)
+
+	c.Msgchan <- m
+}
+
 func write2(fp *os.File,
 	c *cache.Cache,
 	offset, blocksize_bytes uint64,
@@ -221,64 +240,71 @@ func read2(fp *os.File,
 	iopkt.Buffer = buffer
 	iopkt.Offset = offset
 	iopkt.Nblocks = nblocks
-	c.Msgchan <- msg
 
+	hitpkt, err := c.Get(msg)
+	if err != nil {
+		// None found
+		// Read the whole thing from backend
+		fp.ReadAt(buffer, int64(offset))
+
+		m := message.NewMsgPut()
+		m.RetChan = here
+
+		io := m.IoPkt()
+		io.Offset = offset
+		io.Buffer = buffer
+		io.Nblocks = nblocks
+		c.Msgchan <- m
+
+	} else if hitpkt.Hits != nblocks {
+		// Read from storage the ones that did not have
+		// in the hit map.
+		var be_offset, be_block, be_nblocks uint64
+		var be_read_ready = false
+		for block := uint64(0); block < uint64(nblocks); block++ {
+			if !hitpkt.Hitmap[block] {
+				if be_read_ready {
+					be_nblocks++
+				} else {
+					be_read_ready = true
+					be_offset = offset + (block * blocksize_bytes)
+					be_block = block
+					be_nblocks++
+				}
+			} else {
+				if be_read_ready {
+					// Send read
+					buffer_offset := be_block * blocksize_bytes
+					go readandstore(fp, c, be_offset, be_nblocks,
+						buffer[buffer_offset:(buffer_offset+blocksize_bytes)],
+						here)
+					be_read_ready = false
+					be_nblocks = 0
+					be_offset = 0
+					be_block = 0
+				}
+			}
+		}
+		if be_read_ready {
+			buffer_offset := be_block * blocksize_bytes
+			go readandstore(fp, c, be_offset, be_nblocks,
+				buffer[buffer_offset:(buffer_offset+blocksize_bytes)],
+				here)
+
+		}
+
+	}
+
+	// Wait for blocks to be returned
 	msgs := nblocks
 	for msg := range here {
 
 		switch msg.Type {
-		case message.MsgHitmap:
-			// Some or all found
-			hitpkt := msg.HitmapPkt()
-			if hitpkt.Hits != nblocks {
-				// Read from storage the ones that did not have
-				// in the hit map.
-				sent := 0
-				for block := 0; block < nblocks; block++ {
-					if !hitpkt.Hitmap[block] {
-
-						sent++
-						go func(block int) {
-
-							// :TODO: Needs to support multiple blocks
-
-							buffer_offset := uint64(block) * blocksize_bytes
-							current_offset := offset + buffer_offset
-							b := buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-							godbc.Check(len(b)%(4*KB) == 0)
-							fp.ReadAt(b, int64(current_offset))
-
-							m := message.NewMsgPut()
-							m.RetChan = here
-							io := m.IoPkt()
-							io.Offset = current_offset
-							io.Buffer = b
-							c.Msgchan <- m
-
-						}(block)
-					}
-				}
-				godbc.Check((iopkt.Nblocks-hitpkt.Hits) == sent, iopkt.Nblocks, hitpkt.Hits, sent)
-			}
-
 		case message.MsgGet:
-			if msg.Err == cache.ErrNotFound {
-				// None found
-				// Read the whole thing from backend
-				fp.ReadAt(buffer, int64(offset))
-
-				m := message.NewMsgPut()
-				m.RetChan = here
-				io := m.IoPkt()
-				io.Offset = offset
-				io.Buffer = buffer
-				io.Nblocks = nblocks
-				c.Msgchan <- m
-			} else {
+			if msg.Err == nil {
 				io := msg.IoPkt()
 				msgs -= io.Nblocks
 			}
-
 		case message.MsgPut:
 			if msg.Err == nil {
 				io := msg.IoPkt()
