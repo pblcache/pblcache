@@ -25,6 +25,7 @@ import (
 	"github.com/pblcache/pblcache/message"
 	"math/rand"
 	"os"
+	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
@@ -41,7 +42,8 @@ var (
 	runtime, cachesize      int
 	blocksize, iogenerators int
 	reads                   int
-	usedirectio             bool
+	usedirectio, cpuprofile bool
+	filesize_bytes          int64
 
 	// From spc1.c NetApp (BSD-lic)
 	/*
@@ -74,7 +76,10 @@ func init() {
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
 	flag.IntVar(&iogenerators, "iogenerators", 64, "\n\tNumber of io generators")
 	flag.IntVar(&reads, "reads", 65, "\n\tRead percentage (0-100)")
+	flag.Int64Var(&filesize_bytes, "filesize", 0, "\n\tFile size in bytes")
 	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on filename")
+	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
+
 }
 
 func smix(r *rand.Rand) int {
@@ -478,11 +483,17 @@ func simluate(fp *os.File, c *cache.Cache) {
 
 	// Get file size
 	filestat, err := fp.Stat()
+	var filesize uint64
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	filesize := uint64(filestat.Size())
+
+	if filesize_bytes == 0 {
+		filesize = uint64(filestat.Size())
+	} else {
+		filesize = uint64(filesize_bytes)
+	}
 
 	// Setup number of blocks
 	blocksize_bytes := uint64(blocksize * KB)
@@ -586,6 +597,13 @@ func main() {
 	if err != nil {
 		fmt.Println(err)
 		return
+	}
+
+	// Start cpu profiling
+	if cpuprofile {
+		f, _ := os.Create("cpuprofile")
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
 	}
 
 	// Setup number of blocks
