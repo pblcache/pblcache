@@ -92,6 +92,7 @@ func (c *Cache) Put(msg *message.Message) error {
 			//
 			m := message.NewMsgPut()
 			m.RetChan = msg.RetChan
+			m.Priv = msg.Priv
 
 			mio := m.IoPkt()
 			mio.Offset = io.Offset + uint64(block)*c.blocksize

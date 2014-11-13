@@ -31,7 +31,7 @@ func TestNewCache(t *testing.T) {
 	nc.Start()
 	defer nc.Close()
 
-	c := NewCache(8, nc.In)
+	c := NewCache(8, 4096, nc.In)
 	tests.Assert(t, c != nil)
 	c.Close()
 }
@@ -41,19 +41,28 @@ func TestCacheSimple(t *testing.T) {
 	nc.Start()
 	defer nc.Close()
 
-	c := NewCache(8, nc.In)
+	c := NewCache(8, 4096, nc.In)
 	tests.Assert(t, c != nil)
 
 	here := make(chan *message.Message)
+	buffer := make([]byte, 4096)
 	m := message.NewMsgPut()
 	m.RetChan = here
 	io := m.IoPkt()
+	io.Buffer = buffer
 	io.Offset = 1
+	m.Priv = c
 
 	// First Put
-	c.Msgchan <- m
-	<-here
-	tests.Assert(t, io.BlockNum == 0)
+	err := c.Put(m)
+	tests.Assert(t, err == nil)
+	returnedmsg := <-here
+	rio := returnedmsg.IoPkt()
+	tests.Assert(t, m.Type == returnedmsg.Type)
+	tests.Assert(t, returnedmsg.Priv.(*Cache) == c)
+	tests.Assert(t, io.Nblocks == rio.Nblocks)
+	tests.Assert(t, io.Offset == rio.Offset)
+	tests.Assert(t, rio.BlockNum == 0)
 	tests.Assert(t, c.stats.insertions == 1)
 
 	val, ok := c.addressmap[io.Offset]
@@ -62,10 +71,12 @@ func TestCacheSimple(t *testing.T) {
 
 	// Insert again.  Should allocate
 	// next block
-	c.Msgchan <- m
-	<-here
-	tests.Assert(t, io.BlockNum == 1)
-	tests.Assert(t, m.Err == nil)
+	err = c.Put(m)
+	tests.Assert(t, err == nil)
+	returnedmsg = <-here
+	rio = returnedmsg.IoPkt()
+	tests.Assert(t, rio.BlockNum == 1)
+	tests.Assert(t, returnedmsg.Err == nil)
 	tests.Assert(t, c.stats.insertions == 2)
 
 	val, ok = c.addressmap[io.Offset]
@@ -76,23 +87,27 @@ func TestCacheSimple(t *testing.T) {
 	mg := message.NewMsgGet()
 	io = mg.IoPkt()
 	io.Offset = 1
+	io.Buffer = buffer
 	mg.RetChan = here
-	c.Msgchan <- mg
-	<-here
+	hitmap, err := c.Get(mg)
+
+	returnedmsg = <-here
+	io = returnedmsg.IoPkt()
+	tests.Assert(t, err == nil)
+	tests.Assert(t, hitmap.Hits == 1)
+	tests.Assert(t, hitmap.Hitmap[0] == true)
+	tests.Assert(t, hitmap.Hits == io.Nblocks)
 	tests.Assert(t, io.BlockNum == 1)
-	tests.Assert(t, mg.Err == nil)
+	tests.Assert(t, returnedmsg.Err == nil)
 	tests.Assert(t, c.stats.insertions == 2)
 	tests.Assert(t, c.stats.readhits == 1)
 	tests.Assert(t, c.stats.reads == 1)
 
 	// Send Invalidate
-	mi := message.NewMsgInvalidate()
-	io = mi.IoPkt()
-	io.Offset = 1
-	mi.RetChan = here
-	c.Msgchan <- mi
-	<-here
-	tests.Assert(t, mi.Err == nil)
+	iopkt := &message.IoPkt{}
+	iopkt.Offset = 1
+	iopkt.Nblocks = 1
+	c.Invalidate(iopkt)
 	tests.Assert(t, c.stats.insertions == 2)
 	tests.Assert(t, c.stats.readhits == 1)
 	tests.Assert(t, c.stats.reads == 1)
@@ -100,13 +115,10 @@ func TestCacheSimple(t *testing.T) {
 	tests.Assert(t, c.stats.invalidatehits == 1)
 
 	// Send Invalidate
-	mi = message.NewMsgInvalidate()
-	io = mi.IoPkt()
-	io.Offset = 1
-	mi.RetChan = here
-	c.Msgchan <- mi
-	<-here
-	tests.Assert(t, mi.Err == ErrNotFound)
+	iopkt = &message.IoPkt{}
+	iopkt.Offset = 1
+	iopkt.Nblocks = 1
+	c.Invalidate(iopkt)
 	tests.Assert(t, c.stats.insertions == 2)
 	tests.Assert(t, c.stats.readhits == 1)
 	tests.Assert(t, c.stats.reads == 1)
@@ -117,10 +129,11 @@ func TestCacheSimple(t *testing.T) {
 	mg = message.NewMsgGet()
 	io = mg.IoPkt()
 	io.Offset = 1
+	io.Buffer = buffer
 	mg.RetChan = here
-	c.Msgchan <- mg
-	<-here
-	tests.Assert(t, mg.Err == ErrNotFound)
+	hitmap, err = c.Get(mg)
+	tests.Assert(t, err == ErrNotFound)
+	tests.Assert(t, hitmap == nil)
 	tests.Assert(t, c.stats.insertions == 2)
 	tests.Assert(t, c.stats.readhits == 1)
 	tests.Assert(t, c.stats.reads == 2)
@@ -153,8 +166,8 @@ func response_handler(wg *sync.WaitGroup,
 	m chan *message.Message) {
 
 	var (
-		gethits, getmisses, puts, invalidatehits, invalidatemisses int
-		tgh, tgm, tp, tih, tim                                     tm.TimeDuration
+		gethits, getmisses, puts int
+		tgh, tgm, tp             tm.TimeDuration
 	)
 
 	defer wg.Done()
@@ -184,14 +197,6 @@ func response_handler(wg *sync.WaitGroup,
 					getmisses++
 					tgm.Add(msg.TimeElapsed())
 				}
-			case message.MsgInvalidate:
-				if msg.Err == nil {
-					invalidatehits++
-					tih.Add(msg.TimeElapsed())
-				} else {
-					invalidatemisses++
-					tim.Add(msg.TimeElapsed())
-				}
 			case message.MsgPut:
 				puts++
 				tp.Add(msg.TimeElapsed())
@@ -201,16 +206,14 @@ func response_handler(wg *sync.WaitGroup,
 			emptychan = true
 		}
 	}
-	fmt.Printf("Get H:%d M:%d, Puts:%d, Invalidates H:%d M:%d\n"+
-		"Get Hit Rate: %.2f Invalidate Hit Rate: %.2f\n"+
+	fmt.Printf("Get H:%d M:%d, Puts:%d\n"+
+		"Get Hit Rate: %.2f\n"+
 		"Mean times in usecs:\n"+
-		"Get H:%.2f M:%.2f, Puts:%.2f, Inv H:%.2f M:%.2f\n",
-		gethits, getmisses, puts, invalidatehits, invalidatemisses,
+		"Get H:%.2f M:%.2f, Puts:%.2f\n",
+		gethits, getmisses, puts,
 		float64(gethits)/float64(gethits+getmisses),
-		float64(invalidatehits)/float64(invalidatehits+invalidatemisses),
 		tgh.MeanTimeUsecs(), tgm.MeanTimeUsecs(),
-		tp.MeanTimeUsecs(),
-		tih.MeanTimeUsecs(), tim.MeanTimeUsecs())
+		tp.MeanTimeUsecs())
 }
 
 func TestCacheConcurrency(t *testing.T) {
@@ -220,7 +223,7 @@ func TestCacheConcurrency(t *testing.T) {
 	nc.Start()
 	defer nc.Close()
 
-	c := NewCache(300, nc.In)
+	c := NewCache(300, 4096, nc.In)
 
 	// Start up response server
 	returnch := make(chan *message.Message, 100)
@@ -238,15 +241,14 @@ func TestCacheConcurrency(t *testing.T) {
 			// Each client to send 1k IOs
 			for io := 0; io < 1000; io++ {
 				var msg *message.Message
-				switch r.Intn(3) {
+				switch r.Intn(2) {
 				case 0:
 					msg = message.NewMsgGet()
 				case 1:
 					msg = message.NewMsgPut()
-				case 2:
-					msg = message.NewMsgInvalidate()
 				}
 				iopkt := msg.IoPkt()
+				iopkt.Buffer = make([]byte, 4096)
 
 				// Maximum "disk" size is 10 times bigger than cache
 				iopkt.Offset = uint64(r.Int63n(3000))
@@ -254,7 +256,14 @@ func TestCacheConcurrency(t *testing.T) {
 
 				// Send request
 				msg.TimeStart()
-				c.Msgchan <- msg
+
+				switch msg.Type {
+				case message.MsgGet:
+					c.Get(msg)
+				case message.MsgPut:
+					c.Invalidate(iopkt)
+					c.Put(msg)
+				}
 
 				// Simulate waiting for more work by sleeping
 				// anywhere from 100usecs to 10ms
