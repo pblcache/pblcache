@@ -84,6 +84,12 @@ func (c *Cache) Put(msg *message.Message) error {
 
 	if io.Nblocks > 1 {
 		for block := 0; block < io.Nblocks; block++ {
+			// It does not matter that we send small blocks to the Log, since
+			// it will buffer them before sending them out to the cache device
+			//
+			// We do need to send each one sperately now so that the cache
+			// policy hopefully aligns them one after the other.
+			//
 			m := message.NewMsgPut()
 			m.RetChan = msg.RetChan
 
