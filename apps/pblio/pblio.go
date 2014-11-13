@@ -46,26 +46,28 @@ var (
 	filesize_bytes          int64
 
 	// From spc1.c NetApp (BSD-lic)
+	SMIX_LENGTHS = []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		2, 2, 2, 2, 2, 2,
+		4, 4, 4, 4, 4,
+		8, 8,
+		16, 16,
+		32,
+		64,
+	}
 	/*
-		SMIX_LENGTHS = []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-			2, 2, 2, 2, 2, 2,
+			My own
+
+		SMIX_LENGTHS = []int{16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+			8, 8, 8, 8, 8, 8,
 			4, 4, 4, 4, 4,
-			8, 8,
-			16, 16,
-			32,
-			64,
+			2, 2,
+			1, 1,
+			32, 32,
+			64, 64,
+			128,
+			256,
 		}
 	*/
-	SMIX_LENGTHS = []int{16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-		8, 8, 8, 8, 8, 8,
-		4, 4, 4, 4, 4,
-		2, 2,
-		1, 1,
-		32, 32,
-		64, 64,
-		128,
-		256,
-	}
 )
 
 func init() {
@@ -102,10 +104,10 @@ func readandstore(fp *os.File,
 	io.Buffer = buffer
 	io.Nblocks = int(nblocks)
 
-	c.Msgchan <- m
+	c.Put(m)
 }
 
-func write2(fp *os.File,
+func write(fp *os.File,
 	c *cache.Cache,
 	offset, blocksize_bytes uint64,
 	nblocks int,
@@ -119,19 +121,15 @@ func write2(fp *os.File,
 	// Send invalidates for each block
 	msg := message.NewMsgInvalidate()
 	msg.RetChan = here
-	iopkt := msg.IoPkt()
+	iopkt := &message.IoPkt{}
 	iopkt.Offset = offset
 	iopkt.Nblocks = nblocks
 
-	c.Msgchan <- msg
+	c.Invalidate(iopkt)
 
 	// Write to storage back end
 	// :TODO: check return status
 	fp.WriteAt(buffer, int64(offset))
-
-	// Invalidations should have been done
-	// by now.  Let's make sure.
-	<-here
 
 	// Now write to cache
 	msg = message.NewMsgPut()
@@ -140,7 +138,7 @@ func write2(fp *os.File,
 	iopkt.Nblocks = nblocks
 	iopkt.Offset = offset
 	iopkt.Buffer = buffer
-	c.Msgchan <- msg
+	c.Put(msg)
 
 	msgs := nblocks
 	for msg = range here {
@@ -157,79 +155,7 @@ func write2(fp *os.File,
 	}
 }
 
-func write(fp *os.File,
-	c *cache.Cache,
-	offset, blocksize_bytes uint64,
-	nblocks int,
-	buffer []byte) {
-
-	godbc.Require(len(buffer)%(4*KB) == 0)
-	godbc.Require(blocksize_bytes%(4*KB) == 0)
-
-	here := make(chan *message.Message, nblocks)
-
-	// Send invalidates for each block
-	msgs := nblocks
-	for block := 0; block < nblocks; block++ {
-		msg := message.NewMsgInvalidate()
-		msg.RetChan = here
-
-		buffer_offset := uint64(block) * blocksize_bytes
-		current_offset := offset + buffer_offset
-		iopkt := msg.IoPkt()
-		iopkt.Offset = current_offset
-
-		msg.TimeStart()
-		c.Msgchan <- msg
-	}
-
-	for m := range here {
-		if false {
-			// Add stats
-			m.TimeElapsed()
-		}
-
-		msgs--
-		if msgs == 0 {
-			break
-		}
-	}
-
-	// Write to storage back end
-	// :TODO: check return status
-	fp.WriteAt(buffer, int64(offset))
-
-	// Now write to cache
-	msgs = nblocks
-	for block := 0; block < nblocks; block++ {
-		msg := message.NewMsgPut()
-		msg.RetChan = here
-
-		buffer_offset := uint64(block) * blocksize_bytes
-		current_offset := offset + buffer_offset
-		iopkt := msg.IoPkt()
-		iopkt.Offset = current_offset
-		iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-		godbc.Check(len(iopkt.Buffer)%4*KB == 0)
-		msg.Priv = block
-		c.Msgchan <- msg
-	}
-
-	for m := range here {
-		if false {
-			// Add stats
-			m.TimeElapsed()
-		}
-
-		msgs--
-		if msgs == 0 {
-			break
-		}
-	}
-
-}
-
-func read2(fp *os.File,
+func read(fp *os.File,
 	c *cache.Cache,
 	offset, blocksize_bytes uint64,
 	nblocks int,
@@ -259,7 +185,7 @@ func read2(fp *os.File,
 		io.Offset = offset
 		io.Buffer = buffer
 		io.Nblocks = nblocks
-		c.Msgchan <- m
+		c.Put(m)
 
 	} else if hitpkt.Hits != nblocks {
 		// Read from storage the ones that did not have
@@ -323,162 +249,6 @@ func read2(fp *os.File,
 	}
 }
 
-func read(fp *os.File,
-	c *cache.Cache,
-	offset, blocksize_bytes uint64,
-	nblocks int,
-	buffer []byte) {
-
-	godbc.Require(len(buffer)%(4*KB) == 0)
-	godbc.Require(blocksize_bytes%(4*KB) == 0)
-
-	hitmap := make([]bool, nblocks)
-	here := make(chan *message.Message, nblocks)
-
-	msgs := nblocks
-	for block := 0; block < nblocks; block++ {
-		msg := message.NewMsgGet()
-		msg.RetChan = here
-
-		buffer_offset := uint64(block) * blocksize_bytes
-		current_offset := offset + buffer_offset
-		iopkt := msg.IoPkt()
-		iopkt.Offset = current_offset
-		iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-		godbc.Check(len(iopkt.Buffer)%4*KB == 0)
-		msg.Priv = block
-		c.Msgchan <- msg
-	}
-
-	anyhit := false
-	for m := range here {
-		msgs--
-		if m.Err == nil {
-			anyhit = true
-			block := m.Priv.(int)
-			hitmap[block] = true
-		}
-		if msgs == 0 {
-			break
-		}
-	}
-	anyhit = false
-
-	if anyhit == false {
-		// Read the whole thing from backend
-		fp.ReadAt(buffer, int64(offset))
-
-		/*
-			// Insert each one into cache
-			msgs = nblocks
-			for block := 0; block < nblocks; block++ {
-				msg := message.NewMsgPut()
-				msg.RetChan = here
-
-				buffer_offset := uint64(block) * blocksize_bytes
-				current_offset := offset + buffer_offset
-				iopkt := msg.IoPkt()
-				iopkt.Offset = current_offset
-				iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-				godbc.Check(len(iopkt.Buffer)%(4*KB) == 0)
-				msg.Priv = block
-				c.Msgchan <- msg
-			}
-
-			for m := range here {
-				msgs--
-				if msgs == 0 {
-					break
-				}
-				if m.Err != nil {
-					fmt.Printf("ERROR inserting to cache\n")
-				}
-			}
-		*/
-
-	} else {
-		var wg sync.WaitGroup
-		for block := 0; block < nblocks; block++ {
-			if !hitmap[block] {
-
-				wg.Add(1)
-				go func(block int) {
-					defer wg.Done()
-
-					buffer_offset := uint64(block) * blocksize_bytes
-					current_offset := offset + buffer_offset
-					b := buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-					godbc.Check(len(b)%(4*KB) == 0)
-					fp.ReadAt(b, int64(current_offset))
-					cache_sput(c, current_offset, b)
-				}(block)
-
-			}
-		}
-		wg.Wait()
-	}
-
-}
-
-func cache_sput(c *cache.Cache,
-	offset uint64,
-	buffer []byte) error {
-
-	if c != nil {
-		here := make(chan *message.Message)
-		msg := message.NewMsgPut()
-		msg.RetChan = here
-		iopkt := msg.IoPkt()
-		iopkt.Offset = offset
-		iopkt.Buffer = buffer
-		c.Msgchan <- msg
-		<-here
-
-		//fmt.Print("p")
-		return msg.Err
-	} else {
-		return nil
-	}
-}
-
-func cache_sinval(c *cache.Cache,
-	offset uint64) error {
-
-	if c != nil {
-		here := make(chan *message.Message)
-		msg := message.NewMsgInvalidate()
-		msg.RetChan = here
-		iopkt := msg.IoPkt()
-		iopkt.Offset = offset
-		c.Msgchan <- msg
-		<-here
-
-		//fmt.Print("i")
-		return msg.Err
-	} else {
-		return nil
-	}
-}
-
-func cache_sget(c *cache.Cache, offset uint64, buffer []byte) error {
-
-	if c != nil {
-		here := make(chan *message.Message)
-		msg := message.NewMsgGet()
-		msg.RetChan = here
-		iopkt := msg.IoPkt()
-		iopkt.Offset = offset
-		iopkt.Buffer = buffer
-		c.Msgchan <- msg
-		<-here
-
-		//fmt.Print("g")
-		return msg.Err
-	} else {
-		return cache.ErrNotFound
-	}
-}
-
 func simluate(fp *os.File, c *cache.Cache) {
 
 	// Get file size
@@ -527,7 +297,7 @@ func simluate(fp *os.File, c *cache.Cache) {
 
 					if isread {
 						if c != nil {
-							read2(fp, c, offset,
+							read(fp, c, offset,
 								blocksize_bytes, nblocks,
 								buffer[0:uint64(nblocks)*blocksize_bytes])
 						} else {
@@ -536,7 +306,7 @@ func simluate(fp *os.File, c *cache.Cache) {
 						mbs <- nblocks
 					} else {
 						if c != nil {
-							write2(fp, c, offset,
+							write(fp, c, offset,
 								blocksize_bytes, nblocks,
 								buffer[0:uint64(nblocks)*blocksize_bytes])
 						} else {

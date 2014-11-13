@@ -28,10 +28,7 @@ type Cache struct {
 	cachemap          *CacheMap
 	addressmap        map[uint64]uint64
 	blocks, blocksize uint64
-	Msgchan           chan *message.Message
 	pipeline          chan *message.Message
-	quitchan          chan struct{}
-	wg                sync.WaitGroup
 	lock              sync.Mutex
 }
 
@@ -55,40 +52,56 @@ func NewCache(blocks, blocksize uint64, pipeline chan *message.Message) *Cache {
 	cache.cachemap = NewCacheMap(cache.blocks)
 	cache.addressmap = make(map[uint64]uint64)
 
-	cache.Msgchan = make(chan *message.Message, 32)
-	cache.quitchan = make(chan struct{})
-
 	godbc.Ensure(cache.blocks > 0)
 	godbc.Ensure(cache.cachemap != nil)
 	godbc.Ensure(cache.addressmap != nil)
 	godbc.Ensure(cache.stats != nil)
 
-	// Start goroutine
-	cache.server()
-
 	return cache
 }
 
 func (c *Cache) Close() {
-	close(c.quitchan)
-	c.wg.Wait()
+
 }
 
-func (c *Cache) create_get_submsg(msg *message.Message,
-	offset, buffer_offset, blocknum uint64,
-	buffer []byte) *message.Message {
+func (c *Cache) Invalidate(io *message.IoPkt) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-	m := message.NewMsgGet()
-	m.RetChan = msg.RetChan
-	m.Priv = msg.Priv
+	for block := 0; block < io.Nblocks; block++ {
+		c.invalidate(io.Offset + uint64(block)*c.blocksize)
+	}
 
-	// Set IoPkt
-	mio := m.IoPkt()
-	mio.Offset = offset
-	mio.Buffer = buffer
-	mio.BlockNum = blocknum
+	return nil
+}
 
-	return m
+func (c *Cache) Put(msg *message.Message) error {
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	io := msg.IoPkt()
+
+	if io.Nblocks > 1 {
+		for block := 0; block < io.Nblocks; block++ {
+			m := message.NewMsgPut()
+			m.RetChan = msg.RetChan
+
+			mio := m.IoPkt()
+			mio.Offset = io.Offset + uint64(block)*c.blocksize
+			mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block)*c.blocksize+c.blocksize]
+			mio.BlockNum = c.put(io.Offset)
+			mio.Nblocks = 1
+
+			// Send to next one in line
+			c.pipeline <- m
+		}
+	} else {
+		io.BlockNum = c.put(io.Offset)
+		c.pipeline <- msg
+	}
+
+	return nil
 }
 
 func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
@@ -166,70 +179,21 @@ func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
 	}
 }
 
-func (c *Cache) server() {
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+func (c *Cache) create_get_submsg(msg *message.Message,
+	offset, buffer_offset, blocknum uint64,
+	buffer []byte) *message.Message {
 
-		emptychan := false
-		for {
+	m := message.NewMsgGet()
+	m.RetChan = msg.RetChan
+	m.Priv = msg.Priv
 
-			// Check if we have been signaled through <-quit
-			// If we have, we now know that as soon as the
-			// message channel is empty, we can quit.
-			if emptychan {
-				if len(c.Msgchan) == 0 {
-					break
-				}
-			}
+	// Set IoPkt
+	mio := m.IoPkt()
+	mio.Offset = offset
+	mio.Buffer = buffer
+	mio.BlockNum = blocknum
 
-			select {
-			case msg := <-c.Msgchan:
-				msg.Err = nil
-				io := msg.IoPkt()
-				switch msg.Type {
-				case message.MsgPut:
-					c.lock.Lock()
-					if io.Nblocks > 1 {
-						for block := 0; block < io.Nblocks; block++ {
-							m := message.NewMsgPut()
-							m.RetChan = msg.RetChan
-
-							mio := m.IoPkt()
-							mio.Offset = io.Offset + uint64(block)*c.blocksize
-							mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block)*c.blocksize+c.blocksize]
-							mio.BlockNum = c.put(io.Offset)
-							mio.Nblocks = 1
-
-							// Send to next one in line
-							c.pipeline <- m
-						}
-					} else {
-						io.BlockNum = c.put(io.Offset)
-						c.pipeline <- msg
-					}
-					c.lock.Unlock()
-				case message.MsgGet:
-					c.Get(msg)
-
-				case message.MsgInvalidate:
-					c.lock.Lock()
-					for block := 0; block < io.Nblocks; block++ {
-						c.invalidate(io.Offset + uint64(block)*c.blocksize)
-					}
-					msg.Done()
-					c.lock.Unlock()
-
-					// case Release
-				}
-
-			case <-c.quitchan:
-				// :TODO: Ok for now, but we cannot just quit
-				// We need to empty the Iochan
-				emptychan = true
-			}
-		}
-	}()
+	return m
 }
 
 func (c *Cache) invalidate(key uint64) bool {
