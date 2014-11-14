@@ -29,7 +29,9 @@ type Cache struct {
 	addressmap        map[uint64]uint64
 	blocks, blocksize uint64
 	pipeline          chan *message.Message
+	completionch      chan *message.Message
 	lock              sync.Mutex
+	wg                sync.WaitGroup
 }
 
 var (
@@ -51,17 +53,23 @@ func NewCache(blocks, blocksize uint64, pipeline chan *message.Message) *Cache {
 	cache.stats = &cachestats{}
 	cache.cachemap = NewCacheMap(cache.blocks)
 	cache.addressmap = make(map[uint64]uint64)
+	cache.completionch = make(chan *message.Message, 32)
 
 	godbc.Ensure(cache.blocks > 0)
 	godbc.Ensure(cache.cachemap != nil)
 	godbc.Ensure(cache.addressmap != nil)
 	godbc.Ensure(cache.stats != nil)
+	godbc.Ensure(cache.completionch != nil)
+
+	cache.wg.Add(1)
+	go cache.completion()
 
 	return cache
 }
 
 func (c *Cache) Close() {
-
+	close(c.completionch)
+	c.wg.Wait()
 }
 
 func (c *Cache) Invalidate(io *message.IoPkt) error {
@@ -75,6 +83,28 @@ func (c *Cache) Invalidate(io *message.IoPkt) error {
 	return nil
 }
 
+type BranchMessages struct {
+	parentmsg *message.Message
+	nblocks   int
+}
+
+func (c *Cache) completion() {
+	defer c.wg.Done()
+	for msg := range c.completionch {
+		//
+		parent := msg.Priv.(*BranchMessages)
+		parent.nblocks += msg.IoPkt().NBlocks
+		parentmsg_nblocks := parent.parentmsg.IoPkt().Nblocks
+
+		godbc.Check(parent.nblocks <= parentmsg_nblocks,
+			parent.nblocks, parentmsg_nblocks)
+
+		if parent.nblocks == parentmsg_nblocks {
+			parent.parentmsg.Done()
+		}
+	}
+}
+
 func (c *Cache) Put(msg *message.Message) error {
 
 	c.lock.Lock()
@@ -83,16 +113,24 @@ func (c *Cache) Put(msg *message.Message) error {
 	io := msg.IoPkt()
 
 	if io.Nblocks > 1 {
+
+		// Save parent information for completion routine
+		parentinfo := &BranchMessages{
+			parentmsg: msg,
+			nblocks:   io.Nblocks,
+		}
+
+		//
+		// It does not matter that we send small blocks to the Log, since
+		// it will buffer them before sending them out to the cache device
+		//
+		// We do need to send each one sperately now so that the cache
+		// policy hopefully aligns them one after the other.
+		//
 		for block := 0; block < io.Nblocks; block++ {
-			// It does not matter that we send small blocks to the Log, since
-			// it will buffer them before sending them out to the cache device
-			//
-			// We do need to send each one sperately now so that the cache
-			// policy hopefully aligns them one after the other.
-			//
 			m := message.NewMsgPut()
-			m.RetChan = msg.RetChan
-			m.Priv = msg.Priv
+			m.RetChan = c.completionch
+			m.Priv = parentinfo
 
 			mio := m.IoPkt()
 			mio.Offset = io.Offset + uint64(block)*c.blocksize
