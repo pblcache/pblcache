@@ -36,6 +36,36 @@ func TestNewCache(t *testing.T) {
 	c.Close()
 }
 
+func TestInvalidateMultipleBlocks(t *testing.T) {
+	nc := message.NewNullTerminator()
+	nc.Start()
+	defer nc.Close()
+
+	c := NewCache(8, 4096, nc.In)
+	tests.Assert(t, c != nil)
+	defer c.Close()
+
+	// Insert some values in the addressmap
+	for i := uint64(0); i < 4; i++ {
+
+		// The key is offset in bytes
+		c.addressmap[i*4096] = i
+	}
+
+	// This value should still be on the addressmap
+	c.addressmap[8*4096] = 8
+
+	iopkt := &message.IoPkt{
+		Offset:  0,
+		Nblocks: 8,
+	}
+
+	c.Invalidate(iopkt)
+	tests.Assert(t, c.stats.invalidations == uint64(iopkt.Nblocks))
+	tests.Assert(t, c.stats.invalidatehits == 4)
+	tests.Assert(t, c.addressmap[8*4096] == 8)
+}
+
 func TestCacheSimple(t *testing.T) {
 	nc := message.NewNullTerminator()
 	nc.Start()
