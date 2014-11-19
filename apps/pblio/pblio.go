@@ -119,12 +119,10 @@ func write(fp *os.File,
 	here := make(chan *message.Message, nblocks)
 
 	// Send invalidates for each block
-	msg := message.NewMsgInvalidate()
-	msg.RetChan = here
-	iopkt := &message.IoPkt{}
-	iopkt.Offset = offset
-	iopkt.Nblocks = nblocks
-
+	iopkt := &message.IoPkt{
+		Offset:  offset,
+		Nblocks: nblocks,
+	}
 	c.Invalidate(iopkt)
 
 	// Write to storage back end
@@ -132,7 +130,7 @@ func write(fp *os.File,
 	fp.WriteAt(buffer, int64(offset))
 
 	// Now write to cache
-	msg = message.NewMsgPut()
+	msg := message.NewMsgPut()
 	msg.RetChan = here
 	iopkt = msg.IoPkt()
 	iopkt.Nblocks = nblocks
@@ -140,19 +138,7 @@ func write(fp *os.File,
 	iopkt.Buffer = buffer
 	c.Put(msg)
 
-	msgs := nblocks
-	for msg = range here {
-		godbc.Check(msg.Type == message.MsgPut)
-
-		if msg.Err == nil {
-			iopkt := msg.IoPkt()
-			msgs -= iopkt.Nblocks
-		}
-
-		if msgs == 0 {
-			return
-		}
-	}
+	<-here
 }
 
 func read(fp *os.File,

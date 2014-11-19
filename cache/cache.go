@@ -34,6 +34,16 @@ type Cache struct {
 	wg                sync.WaitGroup
 }
 
+type HitmapPkt struct {
+	Hitmap []bool
+	Hits   int
+}
+
+type ParentInfo struct {
+	parentmsg *message.Message
+	nblocks   int
+}
+
 var (
 	ErrNotFound  = errors.New("None of the blocks where found")
 	ErrSomeFound = errors.New("Only some of the blocks where found")
@@ -83,17 +93,11 @@ func (c *Cache) Invalidate(io *message.IoPkt) error {
 	return nil
 }
 
-type BranchMessages struct {
-	parentmsg *message.Message
-	nblocks   int
-}
-
 func (c *Cache) completion() {
 	defer c.wg.Done()
 	for msg := range c.completionch {
-		//
-		parent := msg.Priv.(*BranchMessages)
-		parent.nblocks += msg.IoPkt().NBlocks
+		parent := msg.Priv.(*ParentInfo)
+		parent.nblocks += msg.IoPkt().Nblocks
 		parentmsg_nblocks := parent.parentmsg.IoPkt().Nblocks
 
 		godbc.Check(parent.nblocks <= parentmsg_nblocks,
@@ -115,7 +119,7 @@ func (c *Cache) Put(msg *message.Message) error {
 	if io.Nblocks > 1 {
 
 		// Save parent information for completion routine
-		parentinfo := &BranchMessages{
+		parentinfo := &ParentInfo{
 			parentmsg: msg,
 			nblocks:   io.Nblocks,
 		}
@@ -149,7 +153,7 @@ func (c *Cache) Put(msg *message.Message) error {
 	return nil
 }
 
-func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
+func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -161,6 +165,13 @@ func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
 	// Create a message
 	var m *message.Message
 	var mblock uint64
+
+	// Save parent information for completion routine
+	parentinfo := &ParentInfo{
+		parentmsg: msg,
+		nblocks:   io.Nblocks,
+	}
+
 	for block := uint64(0); block < uint64(io.Nblocks); block++ {
 		// Get
 		buffer_offset := block * c.blocksize
@@ -174,6 +185,7 @@ func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
 
 				// This is the first message, so let's set it up
 				m = c.create_get_submsg(msg,
+					parentinfo,
 					current_offset,
 					buffer_offset,
 					index,
@@ -197,6 +209,7 @@ func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
 
 					// This is the first message, so let's set it up
 					m = c.create_get_submsg(msg,
+						parentinfo,
 						current_offset,
 						buffer_offset,
 						index,
@@ -214,7 +227,7 @@ func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
 	}
 
 	if hits > 0 {
-		hitmappkt := &message.HitmapPkt{
+		hitmappkt := &HitmapPkt{
 			Hitmap: hitmap,
 			Hits:   hits,
 		}
@@ -225,12 +238,13 @@ func (c *Cache) Get(msg *message.Message) (*message.HitmapPkt, error) {
 }
 
 func (c *Cache) create_get_submsg(msg *message.Message,
+	parentinfo *ParentInfo,
 	offset, buffer_offset, blocknum uint64,
 	buffer []byte) *message.Message {
 
 	m := message.NewMsgGet()
-	m.RetChan = msg.RetChan
-	m.Priv = msg.Priv
+	m.RetChan = c.completionch
+	m.Priv = parentinfo
 
 	// Set IoPkt
 	mio := m.IoPkt()

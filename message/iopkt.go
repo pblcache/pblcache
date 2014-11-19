@@ -50,10 +50,6 @@ func NewMsgPut() *Message {
 	return newio(MsgPut)
 }
 
-func NewMsgInvalidate() *Message {
-	return newio(MsgInvalidate)
-}
-
 func (m *Message) IoPkt() *IoPkt {
 	return m.Pkg.(*IoPkt)
 }
