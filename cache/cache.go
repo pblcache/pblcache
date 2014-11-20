@@ -29,19 +29,12 @@ type Cache struct {
 	addressmap        map[uint64]uint64
 	blocks, blocksize uint64
 	pipeline          chan *message.Message
-	completionch      chan *message.Message
 	lock              sync.Mutex
-	wg                sync.WaitGroup
 }
 
 type HitmapPkt struct {
 	Hitmap []bool
 	Hits   int
-}
-
-type ParentInfo struct {
-	parentmsg *message.Message
-	nblocks   int
 }
 
 var (
@@ -63,23 +56,16 @@ func NewCache(blocks, blocksize uint64, pipeline chan *message.Message) *Cache {
 	cache.stats = &cachestats{}
 	cache.cachemap = NewCacheMap(cache.blocks)
 	cache.addressmap = make(map[uint64]uint64)
-	cache.completionch = make(chan *message.Message, 32)
 
 	godbc.Ensure(cache.blocks > 0)
 	godbc.Ensure(cache.cachemap != nil)
 	godbc.Ensure(cache.addressmap != nil)
 	godbc.Ensure(cache.stats != nil)
-	godbc.Ensure(cache.completionch != nil)
-
-	cache.wg.Add(1)
-	go cache.completion()
 
 	return cache
 }
 
 func (c *Cache) Close() {
-	close(c.completionch)
-	c.wg.Wait()
 }
 
 func (c *Cache) Invalidate(io *message.IoPkt) error {
@@ -93,37 +79,15 @@ func (c *Cache) Invalidate(io *message.IoPkt) error {
 	return nil
 }
 
-func (c *Cache) completion() {
-	defer c.wg.Done()
-	for msg := range c.completionch {
-		parent := msg.Priv.(*ParentInfo)
-		parent.nblocks += msg.IoPkt().Nblocks
-		parentmsg_nblocks := parent.parentmsg.IoPkt().Nblocks
-
-		godbc.Check(parent.nblocks <= parentmsg_nblocks,
-			parent.nblocks, parentmsg_nblocks)
-
-		if parent.nblocks == parentmsg_nblocks {
-			parent.parentmsg.Done()
-		}
-	}
-}
-
 func (c *Cache) Put(msg *message.Message) error {
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	defer msg.Done()
 
 	io := msg.IoPkt()
 
 	if io.Nblocks > 1 {
-
-		// Save parent information for completion routine
-		parentinfo := &ParentInfo{
-			parentmsg: msg,
-			nblocks:   io.Nblocks,
-		}
-
 		//
 		// It does not matter that we send small blocks to the Log, since
 		// it will buffer them before sending them out to the cache device
@@ -133,8 +97,7 @@ func (c *Cache) Put(msg *message.Message) error {
 		//
 		for block := 0; block < io.Nblocks; block++ {
 			m := message.NewMsgPut()
-			m.RetChan = c.completionch
-			m.Priv = parentinfo
+			m.Add(msg)
 
 			mio := m.IoPkt()
 			mio.Offset = io.Offset + uint64(block)*c.blocksize
@@ -164,13 +127,7 @@ func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
 
 	// Create a message
 	var m *message.Message
-	var mblock uint64
-
-	// Save parent information for completion routine
-	parentinfo := &ParentInfo{
-		parentmsg: msg,
-		nblocks:   io.Nblocks,
-	}
+	//var mblock uint64
 
 	for block := uint64(0); block < uint64(io.Nblocks); block++ {
 		// Get
@@ -180,32 +137,16 @@ func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
 			hitmap[block] = true
 			hits++
 
-			// Check if we already have a message ready
-			if m == nil {
-
-				// This is the first message, so let's set it up
-				m = c.create_get_submsg(msg,
-					parentinfo,
-					current_offset,
-					buffer_offset,
-					index,
-					io.Buffer[buffer_offset:(block+1)*c.blocksize])
-				mblock = block
-			} else {
-				// Let's check what block we are using starting from the block
-				// setup by the message
-				numblocks := block - mblock
-
-				// If the next block is available on the log after this block, then
-				// we can optimize the read by reading a larger amount from the log.
-				if m.IoPkt().BlockNum+numblocks == index && hitmap[block-1] == true {
-					// It is the next in both the cache and storage device
-					mio := m.IoPkt()
-					mio.Buffer = io.Buffer[mblock*c.blocksize : (mblock+numblocks+1)*c.blocksize]
-					mio.Nblocks++
-				} else {
-					// Send the previous one
-					c.pipeline <- m
+			m = c.create_get_submsg(msg,
+				current_offset,
+				buffer_offset,
+				index,
+				io.Buffer[buffer_offset:(block+1)*c.blocksize])
+			//fmt.Printf("Sent: %s |", m)
+			c.pipeline <- m
+			/*
+				// Check if we already have a message ready
+				if m == nil {
 
 					// This is the first message, so let's set it up
 					m = c.create_get_submsg(msg,
@@ -215,22 +156,49 @@ func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
 						index,
 						io.Buffer[buffer_offset:(block+1)*c.blocksize])
 					mblock = block
-				}
+				} else {
+					// Let's check what block we are using starting from the block
+					// setup by the message
+					numblocks := block - mblock
 
-			}
+					// If the next block is available on the log after this block, then
+					// we can optimize the read by reading a larger amount from the log.
+					if m.IoPkt().BlockNum+numblocks == index && hitmap[block-1] == true {
+						// It is the next in both the cache and storage device
+						mio := m.IoPkt()
+						mio.Buffer = io.Buffer[mblock*c.blocksize : (mblock+numblocks+1)*c.blocksize]
+						mio.Nblocks++
+					} else {
+						// Send the previous one
+						c.pipeline <- m
+
+						// This is the first message, so let's set it up
+						m = c.create_get_submsg(msg,
+							parentinfo,
+							current_offset,
+							buffer_offset,
+							index,
+							io.Buffer[buffer_offset:(block+1)*c.blocksize])
+						mblock = block
+					}
+
+				}
+			*/
 		}
 	}
 
 	// Check if we have one more message
-	if m != nil {
-		c.pipeline <- m
-	}
-
+	/*
+		if m != nil {
+			c.pipeline <- m
+		}
+	*/
 	if hits > 0 {
 		hitmappkt := &HitmapPkt{
 			Hitmap: hitmap,
 			Hits:   hits,
 		}
+		msg.Done()
 		return hitmappkt, nil
 	} else {
 		return nil, ErrNotFound
@@ -238,13 +206,11 @@ func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
 }
 
 func (c *Cache) create_get_submsg(msg *message.Message,
-	parentinfo *ParentInfo,
 	offset, buffer_offset, blocknum uint64,
 	buffer []byte) *message.Message {
 
 	m := message.NewMsgGet()
-	m.RetChan = c.completionch
-	m.Priv = parentinfo
+	m.Add(msg)
 
 	// Set IoPkt
 	mio := m.IoPkt()

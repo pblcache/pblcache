@@ -158,8 +158,10 @@ func read(fp *os.File,
 	iopkt.Offset = offset
 	iopkt.Nblocks = nblocks
 
+	msgs := 0
 	hitpkt, err := c.Get(msg)
 	if err != nil {
+		//fmt.Printf("|nblocks:%d::hits:0--", nblocks)
 		// None found
 		// Read the whole thing from backend
 		fp.ReadAt(buffer, int64(offset))
@@ -172,8 +174,10 @@ func read(fp *os.File,
 		io.Buffer = buffer
 		io.Nblocks = nblocks
 		c.Put(m)
+		msgs++
 
 	} else if hitpkt.Hits != nblocks {
+		//fmt.Printf("|******nblocks:%d::hits:%d--", nblocks, hitpkt.Hits)
 		// Read from storage the ones that did not have
 		// in the hit map.
 		var be_offset, be_block, be_nblocks uint64
@@ -192,6 +196,7 @@ func read(fp *os.File,
 				if be_read_ready {
 					// Send read
 					buffer_offset := be_block * blocksize_bytes
+					msgs++
 					go readandstore(fp, c, be_offset, be_nblocks,
 						buffer[buffer_offset:(buffer_offset+blocksize_bytes)],
 						here)
@@ -204,30 +209,38 @@ func read(fp *os.File,
 		}
 		if be_read_ready {
 			buffer_offset := be_block * blocksize_bytes
+			msgs++
 			go readandstore(fp, c, be_offset, be_nblocks,
 				buffer[buffer_offset:(buffer_offset+blocksize_bytes)],
 				here)
 
 		}
 
+	} else {
+		msgs = 1
 	}
 
 	// Wait for blocks to be returned
-	msgs := nblocks
 	for msg := range here {
 
-		switch msg.Type {
-		case message.MsgGet:
-			if msg.Err == nil {
-				io := msg.IoPkt()
-				msgs -= io.Nblocks
-			}
-		case message.MsgPut:
-			if msg.Err == nil {
-				io := msg.IoPkt()
-				msgs -= io.Nblocks
-			}
-		}
+		msgs--
+		godbc.Check(msg.Err == nil, msg)
+		/*
+			fmt.Printf("|msgs:%d-%s", msgs, msg)
+				switch msg.Type {
+				case message.MsgGet:
+					if msg.Err == nil {
+						io := msg.IoPkt()
+						msgs -= io.Nblocks
+					}
+				case message.MsgPut:
+					if msg.Err == nil {
+						msgs -= msg.IoPkt().Nblocks
+					}
+				}
+		*/
+
+		godbc.Check(msgs >= 0, msgs)
 
 		if msgs == 0 {
 			return

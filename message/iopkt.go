@@ -15,6 +15,10 @@
 //
 package message
 
+import (
+	"fmt"
+)
+
 type IoPkt struct {
 	// Object descriptor
 	Obj uint16
@@ -52,4 +56,17 @@ func NewMsgPut() *Message {
 
 func (m *Message) IoPkt() *IoPkt {
 	return m.Pkg.(*IoPkt)
+}
+
+func (i *IoPkt) String() string {
+	return fmt.Sprintf("IoPkt{"+
+		"Obj:%v "+
+		"Offset:%v "+
+		"BlockNum:%v "+
+		"Nblocks:%v"+
+		"}",
+		i.Obj,
+		i.Offset,
+		i.BlockNum,
+		i.Nblocks)
 }

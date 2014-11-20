@@ -16,7 +16,9 @@
 package message
 
 import (
+	"fmt"
 	"github.com/lpabon/godbc"
+	"sync"
 	"time"
 )
 
@@ -45,6 +47,8 @@ type Message struct {
 	RetChan chan *Message
 	Err     error
 	Stats   MessageStats
+	parent  *Message
+	wg      sync.WaitGroup
 }
 
 func (m *Message) TimeStart() {
@@ -55,7 +59,37 @@ func (m *Message) TimeElapsed() time.Duration {
 	return time.Now().Sub(m.Stats.start)
 }
 
+func (m *Message) Add(parent *Message) {
+	godbc.Require(m.parent == nil, m, parent)
+
+	parent.wg.Add(1)
+	m.parent = parent
+
+	godbc.Ensure(m.parent == parent)
+}
+
+func (m *Message) String() string {
+	return fmt.Sprintf("MSG{"+
+		"Type:%d "+
+		"Pkg:%v "+
+		"Priv:%v "+
+		"parent:%v"+
+		"}",
+		m.Type,
+		m.Pkg,
+		m.Priv,
+		m.parent)
+}
+
 func (m *Message) Done() {
-	godbc.Require(m.RetChan != nil)
-	m.RetChan <- m
+	go func() {
+		m.wg.Wait()
+		if m.parent != nil {
+			m.parent.wg.Done()
+			m.parent = nil
+		}
+		if m.RetChan != nil {
+			m.RetChan <- m
+		}
+	}()
 }
