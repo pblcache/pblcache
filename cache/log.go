@@ -369,9 +369,7 @@ func (c *Log) get(msg *message.Message) error {
 	var n int
 	var err error
 
-	msg.Done()
-	return nil
-
+	defer msg.Done()
 	iopkt := msg.IoPkt()
 
 	/*
@@ -424,8 +422,7 @@ func (c *Log) get(msg *message.Message) error {
 			orig_nblocks--
 			if readmsg == nil {
 				readmsg = message.NewMsgGet()
-				readmsg.RetChan = msg.RetChan
-				readmsg.Priv = msg.Priv
+				readmsg.Add(msg)
 				io := readmsg.IoPkt()
 				io.BlockNum = iopkt.BlockNum + uint64(block)
 				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
@@ -450,10 +447,6 @@ func (c *Log) get(msg *message.Message) error {
 	if iopkt.Nblocks != orig_nblocks {
 		msg.Err = ErrPending
 		iopkt.Nblocks = orig_nblocks
-	}
-
-	if iopkt.Nblocks > 0 {
-		msg.Done()
 	}
 
 	return nil

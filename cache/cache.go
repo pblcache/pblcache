@@ -127,7 +127,7 @@ func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
 
 	// Create a message
 	var m *message.Message
-	//var mblock uint64
+	var mblock uint64
 
 	for block := uint64(0); block < uint64(io.Nblocks); block++ {
 		// Get
@@ -137,62 +137,49 @@ func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
 			hitmap[block] = true
 			hits++
 
-			m = c.create_get_submsg(msg,
-				current_offset,
-				buffer_offset,
-				index,
-				io.Buffer[buffer_offset:(block+1)*c.blocksize])
-			//fmt.Printf("Sent: %s |", m)
-			c.pipeline <- m
-			/*
-				// Check if we already have a message ready
-				if m == nil {
+			// Check if we already have a message ready
+			if m == nil {
+
+				// This is the first message, so let's set it up
+				m = c.create_get_submsg(msg,
+					current_offset,
+					buffer_offset,
+					index,
+					io.Buffer[buffer_offset:(block+1)*c.blocksize])
+				mblock = block
+			} else {
+				// Let's check what block we are using starting from the block
+				// setup by the message
+				numblocks := block - mblock
+
+				// If the next block is available on the log after this block, then
+				// we can optimize the read by reading a larger amount from the log.
+				if m.IoPkt().BlockNum+numblocks == index && hitmap[block-1] == true {
+					// It is the next in both the cache and storage device
+					mio := m.IoPkt()
+					mio.Buffer = io.Buffer[mblock*c.blocksize : (mblock+numblocks+1)*c.blocksize]
+					mio.Nblocks++
+				} else {
+					// Send the previous one
+					c.pipeline <- m
 
 					// This is the first message, so let's set it up
 					m = c.create_get_submsg(msg,
-						parentinfo,
 						current_offset,
 						buffer_offset,
 						index,
 						io.Buffer[buffer_offset:(block+1)*c.blocksize])
 					mblock = block
-				} else {
-					// Let's check what block we are using starting from the block
-					// setup by the message
-					numblocks := block - mblock
-
-					// If the next block is available on the log after this block, then
-					// we can optimize the read by reading a larger amount from the log.
-					if m.IoPkt().BlockNum+numblocks == index && hitmap[block-1] == true {
-						// It is the next in both the cache and storage device
-						mio := m.IoPkt()
-						mio.Buffer = io.Buffer[mblock*c.blocksize : (mblock+numblocks+1)*c.blocksize]
-						mio.Nblocks++
-					} else {
-						// Send the previous one
-						c.pipeline <- m
-
-						// This is the first message, so let's set it up
-						m = c.create_get_submsg(msg,
-							parentinfo,
-							current_offset,
-							buffer_offset,
-							index,
-							io.Buffer[buffer_offset:(block+1)*c.blocksize])
-						mblock = block
-					}
-
 				}
-			*/
+
+			}
 		}
 	}
 
 	// Check if we have one more message
-	/*
-		if m != nil {
-			c.pipeline <- m
-		}
-	*/
+	if m != nil {
+		c.pipeline <- m
+	}
 	if hits > 0 {
 		hitmappkt := &HitmapPkt{
 			Hitmap: hitmap,
