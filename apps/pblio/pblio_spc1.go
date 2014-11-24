@@ -20,15 +20,13 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lpabon/godbc"
-	"github.com/lpabon/goioworkload/zipf"
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/message"
-	"math/rand"
 	"os"
 	"runtime/pprof"
-	"sync"
+	//"sync"
 	"syscall"
-	"time"
+	//"time"
 )
 
 const (
@@ -38,54 +36,26 @@ const (
 )
 
 var (
-	filename, cachefilename string
+	asu1, asu2, asu3        string
+	cachefilename           string
 	runtime, cachesize      int
-	blocksize, iogenerators int
-	reads                   int
+	blocksize, contexts     int
 	usedirectio, cpuprofile bool
-	filesize_bytes          int64
-
-	// From spc1.c NetApp (BSD-lic)
-	SMIX_LENGTHS = []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-		2, 2, 2, 2, 2, 2,
-		4, 4, 4, 4, 4,
-		8, 8,
-		16, 16,
-		32,
-		64,
-	}
-	/*
-			My own
-
-		SMIX_LENGTHS = []int{16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-			8, 8, 8, 8, 8, 8,
-			4, 4, 4, 4, 4,
-			2, 2,
-			1, 1,
-			32, 32,
-			64, 64,
-			128,
-			256,
-		}
-	*/
 )
 
 func init() {
-	flag.StringVar(&filename, "filename", "", "\n\tStorage back end file to read and write")
+	flag.StringVar(&asu1, "asu1", "", "\n\tASU1 - Data Store")
+	flag.StringVar(&asu2, "asu2", "", "\n\tASU2 - User Store")
+	flag.StringVar(&asu3, "asu3", "", "\n\tLog")
 	flag.StringVar(&cachefilename, "cache", "", "\n\tCache file name")
 	flag.IntVar(&cachesize, "cachesize", 8, "\n\tCache size in GB")
 	flag.IntVar(&runtime, "runtime", 300, "\n\tRuntime in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
-	flag.IntVar(&iogenerators, "iogenerators", 64, "\n\tNumber of io generators")
-	flag.IntVar(&reads, "reads", 65, "\n\tRead percentage (0-100)")
-	flag.Int64Var(&filesize_bytes, "filesize", 0, "\n\tFile size in bytes")
-	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on filename")
+	flag.IntVar(&contexts, "contexts", 1, "\n\tNumber of contexts.  Each context runs its own SPC1 generator"+
+		"\n\tEach context also has 8 streams.  Four(4) streams for ASU1, three(3)"+
+		"\n\tfor ASU2, and one for ASU3. Values are set in spc1.c:188")
+	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
 	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
-
-}
-
-func smix(r *rand.Rand) int {
-	return SMIX_LENGTHS[r.Intn(len(SMIX_LENGTHS))]
 }
 
 func readandstore(fp *os.File,
@@ -248,6 +218,8 @@ func read(fp *os.File,
 	}
 }
 
+/*
+
 func simluate(fp *os.File, c *cache.Cache) {
 
 	// Get file size
@@ -256,12 +228,6 @@ func simluate(fp *os.File, c *cache.Cache) {
 	if err != nil {
 		fmt.Println(err)
 		return
-	}
-
-	if filesize_bytes == 0 {
-		filesize = uint64(filestat.Size())
-	} else {
-		filesize = uint64(filesize_bytes)
 	}
 
 	// Setup number of blocks
@@ -281,9 +247,9 @@ func simluate(fp *os.File, c *cache.Cache) {
 			defer wg.Done()
 
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			z := zipf.NewZipfWorkload(fileblocks, reads /* read % */)
+			z := zipf.NewZipfWorkload(fileblocks, reads)
 			stop := time.After(time.Second * time.Duration(runtime))
-			buffer := make([]byte, blocksize_bytes*256 /*max in smix*/)
+			buffer := make([]byte, blocksize_bytes*256)
 
 			for {
 				select {
@@ -341,32 +307,79 @@ func simluate(fp *os.File, c *cache.Cache) {
 	close(mbs)
 	mbswg.Wait()
 }
+*/
+
+type Asu struct {
+	fps         []*os.File
+	len         uint32
+	usedirectio bool
+}
+
+type SpcInfo struct {
+	asus []*Asu
+}
+
+func NewAsu(usedirectio bool) *Asu {
+	return &Asu{
+		fps:         make([]*os.File, 0),
+		usedirectio: usedirectio,
+	}
+}
+
+func (a *Asu) Open(filename string) error {
+	flags := os.O_RDWR | os.O_EXCL
+	if a.usedirectio {
+		flags |= syscall.O_DIRECT
+	}
+	fp, err := os.OpenFile(filename, flags, os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	filestat, err := fp.Stat()
+	if err != nil {
+		return err
+	}
+
+	a.fps = append(a.fps, fp)
+	a.len += uint32(filestat.Size() / int64(4*KB))
+
+	return nil
+}
+
+func NewSpcInfo(usedirectio bool) *SpcInfo {
+	s := &SpcInfo{
+		asus: make([]*Asu, 3),
+	}
+
+	s.asus[0] = NewAsu(usedirectio)
+	s.asus[1] = NewAsu(usedirectio)
+	s.asus[2] = NewAsu(usedirectio)
+
+	return s
+}
+
+func (s *SpcInfo) Open(asu int, filename string) error {
+	return s.asus[asu-1].Open(filename)
+}
 
 func main() {
 	flag.Parse()
 
-	if filename == "" {
-		fmt.Print("filename must be set\n")
+	if asu1 == "" ||
+		asu2 == "" ||
+		asu3 == "" {
+		fmt.Print("ASU files must be set\n")
 		return
 	}
 
-	if (0 > reads) || (reads > 100) {
-		fmt.Printf("Invalid value for reads")
-		return
-	}
+	// Initialize spc1info
+	spcinfo := NewSpcInfo(usedirectio)
 
-	// Open file
-	var fp *os.File
-	var err error
-	if usedirectio {
-		fp, err = os.OpenFile(filename, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
-	} else {
-		fp, err = os.OpenFile(filename, os.O_RDWR|os.O_EXCL, os.ModePerm)
-	}
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	// Open asus
+	spcinfo.Open(1, asu1)
+	spcinfo.Open(2, asu2)
+	spcinfo.Open(3, asu3)
 
 	// Start cpu profiling
 	if cpuprofile {
@@ -375,43 +388,46 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	// Setup number of blocks
-	blocksize_bytes := uint64(blocksize * KB)
+	/*
+		// Setup number of blocks
+		blocksize_bytes := uint64(blocksize * KB)
 
-	// Open cache
-	var c *cache.Cache
-	var log *cache.Log
-	var logblocks uint64
+		// Open cache
+		var c *cache.Cache
+		var log *cache.Log
+		var logblocks uint64
 
-	// Determine if we need to use the cache
-	if cachefilename != "" {
-		fmt.Printf("Using %s as the cache\n", cachefilename)
+		// Determine if we need to use the cache
+		if cachefilename != "" {
+			fmt.Printf("Using %s as the cache\n", cachefilename)
 
-		// Create log
-		log, logblocks = cache.NewLog(cachefilename,
-			uint64(cachesize*GB)/blocksize_bytes,
-			blocksize_bytes,
-			(512*KB)/blocksize_bytes,
-			0 /* buffer cache has been removed for now */)
+			// Create log
+			log, logblocks = cache.NewLog(cachefilename,
+				uint64(cachesize*GB)/blocksize_bytes,
+				blocksize_bytes,
+				(512*KB)/blocksize_bytes,
+				0, // buffer cache has been removed for now
+				)
 
-		// Connect cache metadata with log
-		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
-	} else {
-		fmt.Println("No cache set")
-	}
+			// Connect cache metadata with log
+			c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
+		} else {
+			fmt.Println("No cache set")
+		}
 
-	if c != nil {
-		fmt.Println("Cache warmup")
-		simluate(fp, c)
+		if c != nil {
+			fmt.Println("Cache warmup")
+			simluate(fp, c)
 
-		c.StatsClear()
-		fmt.Println("Running simulation...")
-		simluate(fp, c)
-		c.Close()
-		log.Close()
-		fmt.Print(c)
-		fmt.Print(log)
-	} else {
-		simluate(fp, nil)
-	}
+			c.StatsClear()
+			fmt.Println("Running simulation...")
+			simluate(fp, c)
+			c.Close()
+			log.Close()
+			fmt.Print(c)
+			fmt.Print(log)
+		} else {
+			simluate(fp, nil)
+		}
+	*/
 }
