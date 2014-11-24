@@ -410,20 +410,7 @@ func main() {
 			time.Sleep(sleep_time)
 		}
 		lastiotime = time.Now()
-
-		fmt.Printf("%d:asu=%v:"+
-			"rw=%v:"+
-			"blocks=%v:"+
-			"stream=%v:"+
-			"offset=%v:"+
-			"when=%v\n",
-			i,
-			s.Asu,
-			s.Isread,
-			s.Blocks,
-			s.Stream,
-			s.Offset,
-			s.When)
+		fmt.Print(s)
 	}
 	end := time.Now()
 	iops := float64(ios) / end.Sub(start).Seconds()
