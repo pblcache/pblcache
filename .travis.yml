@@ -4,7 +4,7 @@ install:
 - go get code.google.com/p/go.tools/cmd/vet
 - go get github.com/mattn/goveralls
 - go get github.com/lpabon/tm
-- go get github.com/lpabon/zipfworkload
+- go get github.com/lpabon/goioworkload
 - go get -v ./...
 env:
   global:

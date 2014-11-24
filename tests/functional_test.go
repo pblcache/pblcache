@@ -18,8 +18,8 @@ package tests
 import (
 	"fmt"
 	"github.com/lpabon/bufferio"
+	"github.com/lpabon/goioworkload/zipf"
 	"github.com/lpabon/tm"
-	zipf "github.com/lpabon/zipfworkload"
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/message"
 	"math/rand"
