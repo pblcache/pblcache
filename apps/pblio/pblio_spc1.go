@@ -20,13 +20,14 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lpabon/godbc"
+	"github.com/lpabon/goioworkload/spc1"
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/message"
 	"os"
 	"runtime/pprof"
 	//"sync"
 	"syscall"
-	//"time"
+	"time"
 )
 
 const (
@@ -40,6 +41,7 @@ var (
 	cachefilename           string
 	runtime, cachesize      int
 	blocksize, contexts     int
+	bsu                     int
 	usedirectio, cpuprofile bool
 )
 
@@ -48,6 +50,8 @@ func init() {
 	flag.StringVar(&asu2, "asu2", "", "\n\tASU2 - User Store")
 	flag.StringVar(&asu3, "asu3", "", "\n\tLog")
 	flag.StringVar(&cachefilename, "cache", "", "\n\tCache file name")
+	flag.IntVar(&bsu, "bsu", 50, "\n\tNumber of BSUs (Business Scaling Units)."+
+		"\n\tEach BSU requires 50 IOPs from the back end storage")
 	flag.IntVar(&cachesize, "cachesize", 8, "\n\tCache size in GB")
 	flag.IntVar(&runtime, "runtime", 300, "\n\tRuntime in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
@@ -387,6 +391,43 @@ func main() {
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
 	}
+
+	// Initialize Spc1 workload
+	spc1.Spc1Init(bsu,
+		contexts,
+		spcinfo.asus[0].len,
+		spcinfo.asus[1].len,
+		spcinfo.asus[2].len)
+
+	s := spc1.NewSpc1Io(1)
+	start := time.Now()
+	lastiotime := start
+	ios := 100000
+	for i := 0; i < ios; i++ {
+		s.Generate()
+		sleep_time := start.Add(s.When).Sub(lastiotime)
+		if sleep_time > 0 {
+			time.Sleep(sleep_time)
+		}
+		lastiotime = time.Now()
+
+		fmt.Printf("%d:asu=%v:"+
+			"rw=%v:"+
+			"blocks=%v:"+
+			"stream=%v:"+
+			"offset=%v:"+
+			"when=%v\n",
+			i,
+			s.Asu,
+			s.Isread,
+			s.Blocks,
+			s.Stream,
+			s.Offset,
+			s.When)
+	}
+	end := time.Now()
+	iops := float64(ios) / end.Sub(start).Seconds()
+	fmt.Print(iops)
 
 	/*
 		// Setup number of blocks
