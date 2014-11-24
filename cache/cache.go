@@ -97,7 +97,7 @@ func (c *Cache) Put(msg *message.Message) error {
 		//
 		for block := 0; block < io.Nblocks; block++ {
 			m := message.NewMsgPut()
-			m.Add(msg)
+			msg.Add(m)
 
 			mio := m.IoPkt()
 			mio.Offset = io.Offset + uint64(block)*c.blocksize
@@ -197,7 +197,7 @@ func (c *Cache) create_get_submsg(msg *message.Message,
 	buffer []byte) *message.Message {
 
 	m := message.NewMsgGet()
-	m.Add(msg)
+	msg.Add(m)
 
 	// Set IoPkt
 	mio := m.IoPkt()

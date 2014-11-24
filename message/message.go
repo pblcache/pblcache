@@ -59,13 +59,13 @@ func (m *Message) TimeElapsed() time.Duration {
 	return time.Now().Sub(m.Stats.start)
 }
 
-func (m *Message) Add(parent *Message) {
-	godbc.Require(m.parent == nil, m, parent)
+func (m *Message) Add(child *Message) {
+	godbc.Require(child.parent == nil, child)
 
-	parent.wg.Add(1)
-	m.parent = parent
+	m.wg.Add(1)
+	child.parent = m
 
-	godbc.Ensure(m.parent == parent)
+	godbc.Ensure(child.parent == m)
 }
 
 func (m *Message) String() string {

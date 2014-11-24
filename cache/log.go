@@ -422,7 +422,7 @@ func (c *Log) get(msg *message.Message) error {
 			orig_nblocks--
 			if readmsg == nil {
 				readmsg = message.NewMsgGet()
-				readmsg.Add(msg)
+				msg.Add(readmsg)
 				io := readmsg.IoPkt()
 				io.BlockNum = iopkt.BlockNum + uint64(block)
 				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
