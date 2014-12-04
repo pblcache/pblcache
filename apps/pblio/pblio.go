@@ -20,7 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lpabon/godbc"
-	zipf "github.com/lpabon/zipfworkload"
+	"github.com/lpabon/goioworkload/zipf"
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/message"
 	"math/rand"
