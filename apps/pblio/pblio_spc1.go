@@ -25,7 +25,7 @@ import (
 	"github.com/pblcache/pblcache/message"
 	"os"
 	"runtime/pprof"
-	//"sync"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -314,39 +314,46 @@ func simluate(fp *os.File, c *cache.Cache) {
 */
 
 type Asu struct {
-	fps         []*os.File
+	fps         *os.File
 	len         uint32
 	usedirectio bool
 }
 
 type SpcInfo struct {
 	asus []*Asu
+	wg   sync.WaitGroup
 }
 
 func NewAsu(usedirectio bool) *Asu {
 	return &Asu{
-		fps:         make([]*os.File, 0),
 		usedirectio: usedirectio,
 	}
 }
 
 func (a *Asu) Open(filename string) error {
+	var err error
+
+	godbc.Require(filename != "")
+
 	flags := os.O_RDWR | os.O_EXCL
 	if a.usedirectio {
 		flags |= syscall.O_DIRECT
 	}
-	fp, err := os.OpenFile(filename, flags, os.ModePerm)
+
+	a.fps, err = os.OpenFile(filename, flags, os.ModePerm)
 	if err != nil {
 		return err
 	}
 
-	filestat, err := fp.Stat()
+	filestat, err := a.fps.Stat()
 	if err != nil {
 		return err
 	}
 
-	a.fps = append(a.fps, fp)
-	a.len += uint32(filestat.Size() / int64(4*KB))
+	a.len = uint32(filestat.Size() / int64(4*KB))
+
+	godbc.Ensure(a.fps != nil, a.fps)
+	godbc.Ensure(a.len > 0, a.len)
 
 	return nil
 }
@@ -367,7 +374,85 @@ func (s *SpcInfo) Open(asu int, filename string) error {
 	return s.asus[asu-1].Open(filename)
 }
 
+func (s *SpcInfo) sendio(iostream chan *spc1.Spc1Io) {
+	defer s.wg.Done()
+
+	buffer := make([]byte, 4*KB*64)
+	for io := range iostream {
+		if io.Isread {
+			s.asus[io.Asu-1].fps.ReadAt(buffer[0:io.Blocks*4*KB],
+				int64(io.Offset)*int64(4*KB))
+			/*
+				read(s.asus[io.Asu-1].fps,
+					nil, //cache
+					uint64(io.Offset)*uint64(4*KB),
+					uint64(blocksize*KB),
+					int(io.Blocks),
+					buffer)
+			*/
+		} else {
+			s.asus[io.Asu-1].fps.WriteAt(buffer[0:io.Blocks*4*KB],
+				int64(io.Offset)*int64(4*KB))
+			/*
+				write(s.asus[io.Asu-1].fps,
+					nil, //cache
+					uint64(io.Offset)*uint64(4*KB),
+					uint64(blocksize*KB),
+					int(io.Blocks),
+					buffer)
+			*/
+		}
+	}
+}
+
+func (s *SpcInfo) Context(context int) {
+
+	// Spc generator specifies that each context have
+	// 8 io streams.  Spc generator will specify which
+	// io stream to use.
+	streams := 8
+	iostreams := make([]chan *spc1.Spc1Io, streams)
+	for stream := 0; stream < streams; stream++ {
+		iostreams[stream] = make(chan *spc1.Spc1Io, 32)
+		s.wg.Add(1)
+		go s.sendio(iostreams[stream])
+	}
+
+	start := time.Now()
+	lastiotime := start
+	ios := 100000
+	for i := 0; i < ios; i++ {
+
+		// Get the next io
+		spc1 := spc1.NewSpc1Io(context)
+		spc1.Generate()
+
+		// Check how much time we should wait
+		sleep_time := start.Add(spc1.When).Sub(lastiotime)
+		if sleep_time > 0 {
+			time.Sleep(sleep_time)
+		}
+
+		// Send io to io stream
+		iostreams[spc1.Stream] <- spc1
+
+		lastiotime = time.Now()
+	}
+
+	// close the streams for this context
+	for stream := 0; stream < streams; stream++ {
+		close(iostreams[stream])
+	}
+	s.wg.Wait()
+
+	end := time.Now()
+	iops := float64(ios) / end.Sub(start).Seconds()
+	fmt.Print(iops)
+
+}
+
 func main() {
+	var err error
 	flag.Parse()
 
 	if asu1 == "" ||
@@ -381,9 +466,21 @@ func main() {
 	spcinfo := NewSpcInfo(usedirectio)
 
 	// Open asus
-	spcinfo.Open(1, asu1)
-	spcinfo.Open(2, asu2)
-	spcinfo.Open(3, asu3)
+	err = spcinfo.Open(1, asu1)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
+	err = spcinfo.Open(2, asu2)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
+	err = spcinfo.Open(3, asu3)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
 
 	// Start cpu profiling
 	if cpuprofile {
@@ -399,22 +496,26 @@ func main() {
 		spcinfo.asus[1].len,
 		spcinfo.asus[2].len)
 
-	s := spc1.NewSpc1Io(1)
-	start := time.Now()
-	lastiotime := start
-	ios := 100000
-	for i := 0; i < ios; i++ {
-		s.Generate()
-		sleep_time := start.Add(s.When).Sub(lastiotime)
-		if sleep_time > 0 {
-			time.Sleep(sleep_time)
+	spcinfo.Context(1)
+
+	/*
+		s := spc1.NewSpc1Io(1)
+		start := time.Now()
+		lastiotime := start
+		ios := 100000
+		for i := 0; i < ios; i++ {
+			s.Generate()
+			sleep_time := start.Add(s.When).Sub(lastiotime)
+			if sleep_time > 0 {
+				time.Sleep(sleep_time)
+			}
+			lastiotime = time.Now()
+			fmt.Print(s)
 		}
-		lastiotime = time.Now()
-		fmt.Print(s)
-	}
-	end := time.Now()
-	iops := float64(ios) / end.Sub(start).Seconds()
-	fmt.Print(iops)
+		end := time.Now()
+		iops := float64(ios) / end.Sub(start).Seconds()
+		fmt.Print(iops)
+	*/
 
 	/*
 		// Setup number of blocks
