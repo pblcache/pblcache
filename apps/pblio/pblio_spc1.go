@@ -429,19 +429,19 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup, context int) {
 	for i := 1; i <= ios; i++ {
 
 		// Get the next io
-		spc1 := spc1.NewSpc1Io(context)
-		err := spc1.Generate()
+		s := spc1.NewSpc1Io(context)
+		err := s.Generate()
 		godbc.Check(err == nil, err)
-		godbc.Invariant(spc1)
+		godbc.Invariant(s)
 
 		// Check how much time we should wait
-		sleep_time := start.Add(spc1.When).Sub(lastiotime)
+		sleep_time := start.Add(s.When).Sub(lastiotime)
 		if sleep_time > 0 {
 			time.Sleep(sleep_time)
 		}
 
 		// Send io to io stream
-		iostreams[spc1.Stream] <- spc1
+		iostreams[s.Stream] <- s
 
 		lastiotime = time.Now()
 
