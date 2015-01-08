@@ -350,6 +350,7 @@ func (a *Asu) Open(filename string) error {
 		return err
 	}
 
+	// Length in 4KB blocks
 	a.len = uint32(filestat.Size() / int64(4*KB))
 
 	godbc.Ensure(a.fps != nil, a.fps)
@@ -380,6 +381,8 @@ func (s *SpcInfo) sendio(iostream chan *spc1.Spc1Io) {
 	buffer := make([]byte, 4*KB*64)
 	for io := range iostream {
 		if io.Isread {
+			godbc.Require(io.Asu > 0, io.Asu)
+			godbc.Require(io.Asu <= 3, io.Asu)
 			s.asus[io.Asu-1].fps.ReadAt(buffer[0:io.Blocks*4*KB],
 				int64(io.Offset)*int64(4*KB))
 			/*
@@ -405,7 +408,9 @@ func (s *SpcInfo) sendio(iostream chan *spc1.Spc1Io) {
 	}
 }
 
-func (s *SpcInfo) Context(context int) {
+func (s *SpcInfo) Context(wg *sync.WaitGroup, context int) {
+
+	defer wg.Done()
 
 	// Spc generator specifies that each context have
 	// 8 io streams.  Spc generator will specify which
@@ -421,11 +426,13 @@ func (s *SpcInfo) Context(context int) {
 	start := time.Now()
 	lastiotime := start
 	ios := 100000
-	for i := 0; i < ios; i++ {
+	for i := 1; i <= ios; i++ {
 
 		// Get the next io
 		spc1 := spc1.NewSpc1Io(context)
-		spc1.Generate()
+		err := spc1.Generate()
+		godbc.Check(err == nil, err)
+		godbc.Invariant(spc1)
 
 		// Check how much time we should wait
 		sleep_time := start.Add(spc1.When).Sub(lastiotime)
@@ -437,6 +444,13 @@ func (s *SpcInfo) Context(context int) {
 		iostreams[spc1.Stream] <- spc1
 
 		lastiotime = time.Now()
+
+		if i%1000 == 0 {
+			end := time.Now()
+			iops := float64(i) / end.Sub(start).Seconds()
+			fmt.Printf("IOPS = %.2f\r", iops)
+		}
+
 	}
 
 	// close the streams for this context
@@ -447,7 +461,7 @@ func (s *SpcInfo) Context(context int) {
 
 	end := time.Now()
 	iops := float64(ios) / end.Sub(start).Seconds()
-	fmt.Print(iops)
+	fmt.Printf("IOPS = %.2f\n", iops)
 
 }
 
@@ -496,7 +510,12 @@ func main() {
 		spcinfo.asus[1].len,
 		spcinfo.asus[2].len)
 
-	spcinfo.Context(1)
+	var wg sync.WaitGroup
+	for context := 1; context <= contexts; context++ {
+		wg.Add(1)
+		go spcinfo.Context(&wg, context)
+	}
+	wg.Wait()
 
 	/*
 		s := spc1.NewSpc1Io(1)
