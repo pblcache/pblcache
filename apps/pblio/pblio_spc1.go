@@ -321,8 +321,8 @@ type Asu struct {
 }
 
 type SpcInfo struct {
-	asus []*Asu
-	wg   sync.WaitGroup
+	asus     []*Asu
+	pblcache *cache.Cache
 }
 
 func NewAsu(usedirectio bool) *Asu {
@@ -360,9 +360,10 @@ func (a *Asu) Open(filename string) error {
 	return nil
 }
 
-func NewSpcInfo(usedirectio bool) *SpcInfo {
+func NewSpcInfo(c *cache.Cache, usedirectio bool) *SpcInfo {
 	s := &SpcInfo{
-		asus: make([]*Asu, 3),
+		pblcache: c,
+		asus:     make([]*Asu, 3),
 	}
 
 	s.asus[0] = NewAsu(usedirectio)
@@ -376,35 +377,46 @@ func (s *SpcInfo) Open(asu int, filename string) error {
 	return s.asus[asu-1].Open(filename)
 }
 
-func (s *SpcInfo) sendio(iostream <-chan *spc1.Spc1Io, iotime chan<- time.Duration) {
-	defer s.wg.Done()
+func (s *SpcInfo) sendio(wg *sync.WaitGroup,
+	iostream <-chan *spc1.Spc1Io,
+	iotime chan<- time.Duration) {
+	defer wg.Done()
 
 	buffer := make([]byte, 4*KB*64)
 	for io := range iostream {
 		start := time.Now()
+
+		// Make sure the io is correct
+		io.Invariant()
+
+		// Send the io
 		if io.Isread {
-			s.asus[io.Asu-1].fps.ReadAt(buffer[0:io.Blocks*4*KB],
-				int64(io.Offset)*int64(4*KB))
-			/*
+			if s.pblcache == nil {
+				s.asus[io.Asu-1].fps.ReadAt(buffer[0:io.Blocks*4*KB],
+					int64(io.Offset)*int64(4*KB))
+			} else {
 				read(s.asus[io.Asu-1].fps,
-					nil, //cache
+					s.pblcache,
 					uint64(io.Offset)*uint64(4*KB),
 					uint64(blocksize*KB),
 					int(io.Blocks),
-					buffer)
-			*/
+					buffer[0:io.Blocks*4*KB])
+			}
 		} else {
-			s.asus[io.Asu-1].fps.WriteAt(buffer[0:io.Blocks*4*KB],
-				int64(io.Offset)*int64(4*KB))
-			/*
+			if s.pblcache == nil {
+				s.asus[io.Asu-1].fps.WriteAt(buffer[0:io.Blocks*4*KB],
+					int64(io.Offset)*int64(4*KB))
+			} else {
 				write(s.asus[io.Asu-1].fps,
-					nil, //cache
+					s.pblcache,
 					uint64(io.Offset)*uint64(4*KB),
 					uint64(blocksize*KB),
 					int(io.Blocks),
-					buffer)
-			*/
+					buffer[0:io.Blocks*4*KB])
+			}
 		}
+
+		// Report back the latency
 		end := time.Now()
 		iotime <- end.Sub(start)
 	}
@@ -422,19 +434,22 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 	// io stream to use.
 	streams := 8
 	iostreams := make([]chan *spc1.Spc1Io, streams)
+
+	var iostreamwg sync.WaitGroup
 	for stream := 0; stream < streams; stream++ {
+		iostreamwg.Add(1)
 		iostreams[stream] = make(chan *spc1.Spc1Io, 32)
-		s.wg.Add(1)
-		go s.sendio(iostreams[stream], iotime)
+		go s.sendio(&iostreamwg, iostreams[stream], iotime)
 	}
 
 	start := time.Now()
 	lastiotime := start
 
-	for {
+	ioloop := true
+	for ioloop {
 		select {
 		case <-stop:
-			return
+			ioloop = false
 		default:
 			// Get the next io
 			s := spc1.NewSpc1Io(context)
@@ -466,12 +481,11 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 	for stream := 0; stream < streams; stream++ {
 		close(iostreams[stream])
 	}
-	s.wg.Wait()
+	iostreamwg.Wait()
 
 }
 
 func main() {
-	var err error
 	flag.Parse()
 
 	if asu1 == "" ||
@@ -481,10 +495,37 @@ func main() {
 		return
 	}
 
+	// Setup number of blocks
+	blocksize_bytes := uint64(blocksize * KB)
+
+	// Open cache
+	var c *cache.Cache
+	var log *cache.Log
+	var logblocks uint64
+
+	// Determine if we need to use the cache
+	if cachefilename != "" {
+		fmt.Printf("Using %s as the cache\n", cachefilename)
+
+		// Create log
+		log, logblocks = cache.NewLog(cachefilename,
+			uint64(cachesize*GB)/blocksize_bytes,
+			blocksize_bytes,
+			(512*KB)/blocksize_bytes,
+			0, // buffer cache has been removed for now
+		)
+
+		// Connect cache metadata with log
+		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
+	} else {
+		fmt.Println("No cache set")
+	}
+
 	// Initialize spc1info
-	spcinfo := NewSpcInfo(usedirectio)
+	spcinfo := NewSpcInfo(c, usedirectio)
 
 	// Open asus
+	var err error
 	err = spcinfo.Open(1, asu1)
 	if err != nil {
 		fmt.Print(err)
@@ -531,6 +572,7 @@ func main() {
 	// from the io routines and print out to the console
 	// every few seconds
 	var outputwg sync.WaitGroup
+	outputwg.Add(1)
 	go func() {
 		defer outputwg.Done()
 
@@ -551,9 +593,9 @@ func main() {
 			case <-print_iops:
 				end := time.Now()
 				iops := float64(ios) / end.Sub(start).Seconds()
-				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms",
+				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms"+
+					"                                   \r",
 					ios, iops, latency_mean.MeanTimeUsecs()/1000)
-				fmt.Print("                  \r")
 
 				// Clear the latency
 				latency_mean = tm.TimeDuration{}
@@ -561,9 +603,15 @@ func main() {
 				// Set the timer for the next time
 				print_iops = time.After(time.Second * 2)
 			default:
-
 			}
 		}
+
+		end := time.Now()
+		iops := float64(ios) / end.Sub(start).Seconds()
+		fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms",
+			ios, iops, latency_mean.MeanTimeUsecs()/1000)
+
+		fmt.Print("\n")
 	}()
 
 	// Wait here for all the context goroutines to finish
@@ -572,4 +620,15 @@ func main() {
 	// Now we can close the output goroutine
 	close(iotime)
 	outputwg.Wait()
+
+	// Print cache stats
+	if c != nil {
+		c.Close()
+		log.Close()
+		fmt.Print(c)
+		fmt.Print(log)
+	} else {
+		fmt.Println("No cache stats")
+	}
+
 }
