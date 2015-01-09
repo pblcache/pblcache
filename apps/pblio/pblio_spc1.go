@@ -200,21 +200,6 @@ func read(fp *os.File,
 
 		msgs--
 		godbc.Check(msg.Err == nil, msg)
-		/*
-			fmt.Printf("|msgs:%d-%s", msgs, msg)
-				switch msg.Type {
-				case message.MsgGet:
-					if msg.Err == nil {
-						io := msg.IoPkt()
-						msgs -= io.Nblocks
-					}
-				case message.MsgPut:
-					if msg.Err == nil {
-						msgs -= msg.IoPkt().Nblocks
-					}
-				}
-		*/
-
 		godbc.Check(msgs >= 0, msgs)
 
 		if msgs == 0 {
@@ -222,97 +207,6 @@ func read(fp *os.File,
 		}
 	}
 }
-
-/*
-
-func simluate(fp *os.File, c *cache.Cache) {
-
-	// Get file size
-	filestat, err := fp.Stat()
-	var filesize uint64
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// Setup number of blocks
-	blocksize_bytes := uint64(blocksize * KB)
-	fileblocks := uint64(filesize / blocksize_bytes)
-	mbs := make(chan int, iogenerators)
-
-	// Start timer
-	start := time.Now()
-
-	// Start IO generators
-	var wg sync.WaitGroup
-	for gen := 0; gen < iogenerators; gen++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			z := zipf.NewZipfWorkload(fileblocks, reads)
-			stop := time.After(time.Second * time.Duration(runlen))
-			buffer := make([]byte, blocksize_bytes*256)
-
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-					block, isread := z.ZipfGenerate()
-					offset := block * blocksize_bytes
-					nblocks := smix(r)
-
-					if isread {
-						if c != nil {
-							read(fp, c, offset,
-								blocksize_bytes, nblocks,
-								buffer[0:uint64(nblocks)*blocksize_bytes])
-						} else {
-							fp.ReadAt(buffer[0:uint64(nblocks)*blocksize_bytes], int64(offset))
-						}
-						mbs <- nblocks
-					} else {
-						if c != nil {
-							write(fp, c, offset,
-								blocksize_bytes, nblocks,
-								buffer[0:uint64(nblocks)*blocksize_bytes])
-						} else {
-							fp.WriteAt(buffer[0:uint64(nblocks)*blocksize_bytes], int64(offset))
-						}
-						mbs <- nblocks
-					}
-				}
-			}
-		}()
-	}
-
-	var mbswg sync.WaitGroup
-	mbswg.Add(1)
-	go func() {
-		defer mbswg.Done()
-		var num_blocks int
-
-		for ioblocks := range mbs {
-			num_blocks += ioblocks
-		}
-		total_duration := time.Now().Sub(start)
-
-		fmt.Printf("Bandwidth: %.1f MB/s\n",
-			((float64(blocksize_bytes)*
-				float64(num_blocks))/(1024.0*1024.0))/
-				float64(total_duration.Seconds()))
-		fmt.Printf("Seconds: %.2f\n", total_duration.Seconds())
-		fmt.Printf("IO blocks: %d\n", num_blocks)
-	}()
-
-	wg.Wait()
-	close(mbs)
-	mbswg.Wait()
-}
-*/
 
 type Asu struct {
 	fps         *os.File
