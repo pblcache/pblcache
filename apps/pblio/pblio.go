@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"github.com/lpabon/tm"
@@ -35,12 +36,12 @@ const (
 )
 
 var (
-	asu1, asu2, asu3        string
-	cachefilename           string
-	runlen, cachesize       int
-	blocksize, contexts     int
-	bsu                     int
-	usedirectio, cpuprofile bool
+	asu1, asu2, asu3         string
+	cachefilename, pbliodata string
+	runlen, cachesize        int
+	blocksize, contexts      int
+	bsu, dataperiod          int
+	usedirectio, cpuprofile  bool
 )
 
 func init() {
@@ -58,6 +59,8 @@ func init() {
 		"\n\tfor ASU2, and one for ASU3. Values are set in spc1.c:188")
 	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
 	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
+	flag.StringVar(&pbliodata, "data", "pblio.data", "\n\tStats file in CSV format")
+	flag.IntVar(&dataperiod, "dataperiod", 5, "\n\tNumber of seconds per data collected and saved in the csv file")
 }
 
 func main() {
@@ -69,6 +72,15 @@ func main() {
 		fmt.Print("ASU files must be set\n")
 		return
 	}
+
+	// Open stats file
+	fp, err := os.Create(pbliodata)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
+	metrics := bufio.NewWriter(fp)
+	defer fp.Close()
 
 	// Setup number of blocks
 	blocksize_bytes := uint64(blocksize * KB)
@@ -100,7 +112,6 @@ func main() {
 	spcinfo := spc.NewSpcInfo(c, usedirectio, blocksize)
 
 	// Open asus
-	var err error
 	err = spcinfo.Open(1, asu1)
 	if err != nil {
 		fmt.Print(err)
@@ -129,14 +140,13 @@ func main() {
 
 	// This channel will be used for the io to return
 	// the latency
-	iotime := make(chan time.Duration, 64)
+	iotime := make(chan time.Duration, 1024)
 
 	// Spawn contexts coroutines
 	var wg sync.WaitGroup
-	stop := time.After(time.Second * time.Duration(runlen))
 	for context := 1; context <= contexts; context++ {
 		wg.Add(1)
-		go spcinfo.Context(&wg, iotime, stop, context)
+		go spcinfo.Context(&wg, iotime, runlen, context)
 	}
 
 	// This goroutine will be used to collect the data
@@ -149,8 +159,14 @@ func main() {
 
 		ios := uint64(0)
 		start := time.Now()
+		totaltime := start
 		latency_mean := tm.TimeDuration{}
-		print_iops := time.After(time.Second * 2)
+		print_iops := time.After(time.Second * time.Duration(dataperiod))
+
+		var prev_stats *cache.CacheStats
+		if c != nil {
+			prev_stats = c.Stats()
+		}
 
 		for latency := range iotime {
 
@@ -168,11 +184,40 @@ func main() {
 					"                                   \r",
 					ios, iops, latency_mean.MeanTimeUsecs()/1000)
 
-				// Clear the latency
+				// Save stats
+				if c != nil {
+					stats := c.Stats()
+					metrics.WriteString(
+						fmt.Sprintf("%d,"+ // Total time
+							"%d,"+ // Ios
+							"%.2f,"+ // IOPs
+							"%.4f,", // latency in usecs
+							int(end.Sub(totaltime).Seconds()),
+							ios,
+							iops,
+							latency_mean.MeanTimeUsecs()) +
+							stats.CsvDelta(prev_stats) +
+							"\n")
+					prev_stats = stats
+				} else {
+					metrics.WriteString(
+						fmt.Sprintf("%d,"+ // Total time
+							"%d,"+ // Ios
+							"%.2f,"+ // IOPs
+							"%.4f\n", // latency in usecs
+							int(end.Sub(totaltime).Seconds()),
+							ios,
+							iops,
+							latency_mean.MeanTimeUsecs()))
+				}
+
+				// Reset counters
 				latency_mean = tm.TimeDuration{}
+				start = time.Now()
+				ios = 0
 
 				// Set the timer for the next time
-				print_iops = time.After(time.Second * 2)
+				print_iops = time.After(time.Second * time.Duration(dataperiod))
 			default:
 			}
 		}
@@ -201,5 +246,6 @@ func main() {
 	} else {
 		fmt.Println("No cache stats")
 	}
+	metrics.Flush()
 
 }

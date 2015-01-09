@@ -280,8 +280,7 @@ func (s *SpcInfo) Spc1Init(bsu, contexts int) {
 
 func (s *SpcInfo) Context(wg *sync.WaitGroup,
 	iotime chan<- time.Duration,
-	stop <-chan time.Time,
-	context int) {
+	runlen, context int) {
 
 	defer wg.Done()
 
@@ -300,7 +299,7 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 
 	start := time.Now()
 	lastiotime := start
-
+	stop := time.After(time.Second * time.Duration(runlen))
 	ioloop := true
 	for ioloop {
 		select {
