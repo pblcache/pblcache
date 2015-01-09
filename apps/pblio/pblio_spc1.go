@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/lpabon/godbc"
 	"github.com/lpabon/goioworkload/spc1"
+	"github.com/lpabon/tm"
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/message"
 	"os"
@@ -39,7 +40,7 @@ const (
 var (
 	asu1, asu2, asu3        string
 	cachefilename           string
-	runtime, cachesize      int
+	runlen, cachesize       int
 	blocksize, contexts     int
 	bsu                     int
 	usedirectio, cpuprofile bool
@@ -53,7 +54,7 @@ func init() {
 	flag.IntVar(&bsu, "bsu", 50, "\n\tNumber of BSUs (Business Scaling Units)."+
 		"\n\tEach BSU requires 50 IOPs from the back end storage")
 	flag.IntVar(&cachesize, "cachesize", 8, "\n\tCache size in GB")
-	flag.IntVar(&runtime, "runtime", 300, "\n\tRuntime in seconds")
+	flag.IntVar(&runlen, "runlen", 300, "\n\tBenchmark run time length in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
 	flag.IntVar(&contexts, "contexts", 1, "\n\tNumber of contexts.  Each context runs its own SPC1 generator"+
 		"\n\tEach context also has 8 streams.  Four(4) streams for ASU1, three(3)"+
@@ -252,7 +253,7 @@ func simluate(fp *os.File, c *cache.Cache) {
 
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			z := zipf.NewZipfWorkload(fileblocks, reads)
-			stop := time.After(time.Second * time.Duration(runtime))
+			stop := time.After(time.Second * time.Duration(runlen))
 			buffer := make([]byte, blocksize_bytes*256)
 
 			for {
@@ -375,14 +376,13 @@ func (s *SpcInfo) Open(asu int, filename string) error {
 	return s.asus[asu-1].Open(filename)
 }
 
-func (s *SpcInfo) sendio(iostream chan *spc1.Spc1Io) {
+func (s *SpcInfo) sendio(iostream <-chan *spc1.Spc1Io, iotime chan<- time.Duration) {
 	defer s.wg.Done()
 
 	buffer := make([]byte, 4*KB*64)
 	for io := range iostream {
+		start := time.Now()
 		if io.Isread {
-			godbc.Require(io.Asu > 0, io.Asu)
-			godbc.Require(io.Asu <= 3, io.Asu)
 			s.asus[io.Asu-1].fps.ReadAt(buffer[0:io.Blocks*4*KB],
 				int64(io.Offset)*int64(4*KB))
 			/*
@@ -405,10 +405,15 @@ func (s *SpcInfo) sendio(iostream chan *spc1.Spc1Io) {
 					buffer)
 			*/
 		}
+		end := time.Now()
+		iotime <- end.Sub(start)
 	}
 }
 
-func (s *SpcInfo) Context(wg *sync.WaitGroup, context int) {
+func (s *SpcInfo) Context(wg *sync.WaitGroup,
+	iotime chan<- time.Duration,
+	stop <-chan time.Time,
+	context int) {
 
 	defer wg.Done()
 
@@ -420,37 +425,35 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup, context int) {
 	for stream := 0; stream < streams; stream++ {
 		iostreams[stream] = make(chan *spc1.Spc1Io, 32)
 		s.wg.Add(1)
-		go s.sendio(iostreams[stream])
+		go s.sendio(iostreams[stream], iotime)
 	}
 
 	start := time.Now()
 	lastiotime := start
-	ios := 100000
-	for i := 1; i <= ios; i++ {
 
-		// Get the next io
-		spc1 := spc1.NewSpc1Io(context)
-		err := spc1.Generate()
-		godbc.Check(err == nil, err)
-		godbc.Invariant(spc1)
+	for {
+		select {
+		case <-stop:
+			return
+		default:
+			// Get the next io
+			s := s.NewSpc1Io(context)
+			err := s.Generate()
+			godbc.Check(err == nil, err)
+			godbc.Invariant(s)
 
-		// Check how much time we should wait
-		sleep_time := start.Add(spc1.When).Sub(lastiotime)
-		if sleep_time > 0 {
-			time.Sleep(sleep_time)
+			// Check how much time we should wait
+			sleep_time := start.Add(spc1.When).Sub(lastiotime)
+			if sleep_time > 0 {
+				time.Sleep(sleep_time)
+			}
+
+			// Send io to io stream
+			iostreams[spc1.Stream] <- spc1
+
+			lastiotime = time.Now()
+
 		}
-
-		// Send io to io stream
-		iostreams[spc1.Stream] <- spc1
-
-		lastiotime = time.Now()
-
-		if i%1000 == 0 {
-			end := time.Now()
-			iops := float64(i) / end.Sub(start).Seconds()
-			fmt.Printf("IOPS = %.2f\r", iops)
-		}
-
 	}
 
 	// close the streams for this context
@@ -458,10 +461,6 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup, context int) {
 		close(iostreams[stream])
 	}
 	s.wg.Wait()
-
-	end := time.Now()
-	iops := float64(ios) / end.Sub(start).Seconds()
-	fmt.Printf("IOPS = %.2f\n", iops)
 
 }
 
@@ -511,71 +510,38 @@ func main() {
 		spcinfo.asus[2].len)
 
 	var wg sync.WaitGroup
+	iotime := make(chan time.Duration, 64)
+	stop := time.After(time.Second * time.Duration(runlen))
 	for context := 1; context <= contexts; context++ {
 		wg.Add(1)
-		go spcinfo.Context(&wg, context)
+		go spcinfo.Context(&wg, iotime, stop, context)
 	}
-	wg.Wait()
 
-	/*
-		s := spc1.NewSpc1Io(1)
+	var outputwg sync.WaitGroup
+	go func() {
+		defer outputwg.Done()
+
+		ios := uint64(0)
 		start := time.Now()
-		lastiotime := start
-		ios := 100000
-		for i := 0; i < ios; i++ {
-			s.Generate()
-			sleep_time := start.Add(s.When).Sub(lastiotime)
-			if sleep_time > 0 {
-				time.Sleep(sleep_time)
+		latency_mean := tm.TimeDuration{}
+
+		for latency := range iotime {
+
+			ios++
+			latency_mean.Add(latency)
+
+			if ios%5000 == 0 {
+				end := time.Now()
+				iops := float64(ios) / end.Sub(start).Seconds()
+				fmt.Printf("IOPS:%.2f Latency:%.4f ms",
+					iops, latency_mean.MeanTimeUsecs()/1000)
+				fmt.Print("                  \r")
+				latency_mean = tm.TimeDuration{}
 			}
-			lastiotime = time.Now()
-			fmt.Print(s)
 		}
-		end := time.Now()
-		iops := float64(ios) / end.Sub(start).Seconds()
-		fmt.Print(iops)
-	*/
+	}()
 
-	/*
-		// Setup number of blocks
-		blocksize_bytes := uint64(blocksize * KB)
-
-		// Open cache
-		var c *cache.Cache
-		var log *cache.Log
-		var logblocks uint64
-
-		// Determine if we need to use the cache
-		if cachefilename != "" {
-			fmt.Printf("Using %s as the cache\n", cachefilename)
-
-			// Create log
-			log, logblocks = cache.NewLog(cachefilename,
-				uint64(cachesize*GB)/blocksize_bytes,
-				blocksize_bytes,
-				(512*KB)/blocksize_bytes,
-				0, // buffer cache has been removed for now
-				)
-
-			// Connect cache metadata with log
-			c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
-		} else {
-			fmt.Println("No cache set")
-		}
-
-		if c != nil {
-			fmt.Println("Cache warmup")
-			simluate(fp, c)
-
-			c.StatsClear()
-			fmt.Println("Running simulation...")
-			simluate(fp, c)
-			c.Close()
-			log.Close()
-			fmt.Print(c)
-			fmt.Print(log)
-		} else {
-			simluate(fp, nil)
-		}
-	*/
+	wg.Wait()
+	close(iotime)
+	outputwg.Wait()
 }
