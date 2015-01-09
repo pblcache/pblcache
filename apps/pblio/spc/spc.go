@@ -25,6 +25,13 @@ import (
 	"time"
 )
 
+const (
+	ASUs = 3
+	ASU1 = 0
+	ASU2 = 1
+	ASU3 = 2
+)
+
 type SpcInfo struct {
 	asus      []*Asu
 	pblcache  *cache.Cache
@@ -37,19 +44,20 @@ func NewSpcInfo(c *cache.Cache,
 
 	s := &SpcInfo{
 		pblcache:  c,
-		asus:      make([]*Asu, 3),
+		asus:      make([]*Asu, ASUs),
 		blocksize: blocksize,
 	}
 
-	s.asus[0] = NewAsu(usedirectio)
-	s.asus[1] = NewAsu(usedirectio)
-	s.asus[2] = NewAsu(usedirectio)
+	s.asus[ASU1] = NewAsu(usedirectio)
+	s.asus[ASU2] = NewAsu(usedirectio)
+	s.asus[ASU3] = NewAsu(usedirectio)
 
 	return s
 }
 
 func readandstore(fp *os.File,
 	c *cache.Cache,
+	devid uint16,
 	offset uint64,
 	nblocks uint64,
 	buffer []byte,
@@ -60,7 +68,7 @@ func readandstore(fp *os.File,
 	m := message.NewMsgPut()
 	m.RetChan = retchan
 	io := m.IoPkt()
-	io.Offset = offset
+	io.Offset = cache.Address64(cache.Address{Devid: devid, Lba: offset})
 	io.Buffer = buffer
 	io.Nblocks = int(nblocks)
 
@@ -69,6 +77,7 @@ func readandstore(fp *os.File,
 
 func write(fp *os.File,
 	c *cache.Cache,
+	devid uint16,
 	offset, blocksize_bytes uint64,
 	nblocks int,
 	buffer []byte) {
@@ -77,10 +86,11 @@ func write(fp *os.File,
 	godbc.Require(blocksize_bytes%(4*KB) == 0)
 
 	here := make(chan *message.Message, nblocks)
+	cacheoffset := cache.Address64(cache.Address{Devid: devid, Lba: offset})
 
 	// Send invalidates for each block
 	iopkt := &message.IoPkt{
-		Offset:  offset,
+		Offset:  cacheoffset,
 		Nblocks: nblocks,
 	}
 	c.Invalidate(iopkt)
@@ -94,7 +104,7 @@ func write(fp *os.File,
 	msg.RetChan = here
 	iopkt = msg.IoPkt()
 	iopkt.Nblocks = nblocks
-	iopkt.Offset = offset
+	iopkt.Offset = cacheoffset
 	iopkt.Buffer = buffer
 	c.Put(msg)
 
@@ -103,6 +113,7 @@ func write(fp *os.File,
 
 func read(fp *os.File,
 	c *cache.Cache,
+	devid uint16,
 	offset, blocksize_bytes uint64,
 	nblocks int,
 	buffer []byte) {
@@ -111,11 +122,12 @@ func read(fp *os.File,
 	godbc.Require(blocksize_bytes%(4*KB) == 0)
 
 	here := make(chan *message.Message, nblocks)
+	cacheoffset := cache.Address64(cache.Address{Devid: devid, Lba: offset})
 	msg := message.NewMsgGet()
 	msg.RetChan = here
 	iopkt := msg.IoPkt()
 	iopkt.Buffer = buffer
-	iopkt.Offset = offset
+	iopkt.Offset = cacheoffset
 	iopkt.Nblocks = nblocks
 
 	msgs := 0
@@ -130,7 +142,7 @@ func read(fp *os.File,
 		m.RetChan = here
 
 		io := m.IoPkt()
-		io.Offset = offset
+		io.Offset = cacheoffset
 		io.Buffer = buffer
 		io.Nblocks = nblocks
 		c.Put(m)
@@ -157,7 +169,7 @@ func read(fp *os.File,
 					// Send read
 					buffer_offset := be_block * blocksize_bytes
 					msgs++
-					go readandstore(fp, c, be_offset, be_nblocks,
+					go readandstore(fp, c, devid, be_offset, be_nblocks,
 						buffer[buffer_offset:(buffer_offset+blocksize_bytes)],
 						here)
 					be_read_ready = false
@@ -170,7 +182,7 @@ func read(fp *os.File,
 		if be_read_ready {
 			buffer_offset := be_block * blocksize_bytes
 			msgs++
-			go readandstore(fp, c, be_offset, be_nblocks,
+			go readandstore(fp, c, devid, be_offset, be_nblocks,
 				buffer[buffer_offset:(buffer_offset+blocksize_bytes)],
 				here)
 
@@ -204,31 +216,38 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 
 		// Make sure the io is correct
 		io.Invariant()
-
-		// Send the io
-		if io.Isread {
-			if s.pblcache == nil {
-				s.asus[io.Asu-1].fps.ReadAt(buffer[0:io.Blocks*4*KB],
-					int64(io.Offset)*int64(4*KB))
-			} else {
-				read(s.asus[io.Asu-1].fps,
-					s.pblcache,
-					uint64(io.Offset)*uint64(4*KB),
-					uint64(s.blocksize*KB),
-					int(io.Blocks),
-					buffer[0:io.Blocks*4*KB])
-			}
+		if io.Asu == 3 {
+			s.asus[ASU3].fps.WriteAt(
+				buffer[0:io.Blocks*4*KB],
+				int64(io.Offset)*int64(4*KB))
 		} else {
-			if s.pblcache == nil {
-				s.asus[io.Asu-1].fps.WriteAt(buffer[0:io.Blocks*4*KB],
-					int64(io.Offset)*int64(4*KB))
+			// Send the io
+			if io.Isread {
+				if s.pblcache == nil {
+					s.asus[io.Asu-1].fps.ReadAt(buffer[0:io.Blocks*4*KB],
+						int64(io.Offset)*int64(4*KB))
+				} else {
+					read(s.asus[io.Asu-1].fps,
+						s.pblcache,
+						uint16(io.Asu),
+						uint64(io.Offset)*uint64(4*KB),
+						uint64(s.blocksize*KB),
+						int(io.Blocks),
+						buffer[0:io.Blocks*4*KB])
+				}
 			} else {
-				write(s.asus[io.Asu-1].fps,
-					s.pblcache,
-					uint64(io.Offset)*uint64(4*KB),
-					uint64(s.blocksize*KB),
-					int(io.Blocks),
-					buffer[0:io.Blocks*4*KB])
+				if s.pblcache == nil {
+					s.asus[io.Asu-1].fps.WriteAt(buffer[0:io.Blocks*4*KB],
+						int64(io.Offset)*int64(4*KB))
+				} else {
+					write(s.asus[io.Asu-1].fps,
+						s.pblcache,
+						uint16(io.Asu),
+						uint64(io.Offset)*uint64(4*KB),
+						uint64(s.blocksize*KB),
+						int(io.Blocks),
+						buffer[0:io.Blocks*4*KB])
+				}
 			}
 		}
 
