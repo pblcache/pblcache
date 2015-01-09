@@ -438,6 +438,10 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 		default:
 			// Get the next io
 			s := spc1.NewSpc1Io(context)
+
+			// There is some type of bug, where s.Generate()
+			// sometimes does not return anything.  So we loop
+			// here until it returns the next IO
 			for s.Asu == 0 {
 				err := s.Generate()
 				godbc.Check(err == nil)
@@ -526,19 +530,31 @@ func main() {
 		ios := uint64(0)
 		start := time.Now()
 		latency_mean := tm.TimeDuration{}
+		print_iops := time.After(time.Second * 2)
 
 		for latency := range iotime {
 
+			// Save the number of ios being sent
+			// and their latency
 			ios++
 			latency_mean.Add(latency)
 
-			if ios%5000 == 0 {
+			// Do this every few seconds
+			select {
+			case <-print_iops:
 				end := time.Now()
 				iops := float64(ios) / end.Sub(start).Seconds()
-				fmt.Printf("IOPS:%.2f Latency:%.4f ms",
-					iops, latency_mean.MeanTimeUsecs()/1000)
+				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms",
+					ios, iops, latency_mean.MeanTimeUsecs()/1000)
 				fmt.Print("                  \r")
+
+				// Clear the latency
 				latency_mean = tm.TimeDuration{}
+
+				// Set the timer for the next time
+				print_iops = time.After(time.Second * 2)
+			default:
+
 			}
 		}
 	}()
