@@ -13,7 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package pblio
+package spc
+
+import (
+	"github.com/lpabon/godbc"
+	"os"
+	"syscall"
+)
+
+const (
+	KB = 1024
+	MB = 1024 * KB
+	GB = 1024 * MB
+)
 
 type Asu struct {
 	fps         *os.File
