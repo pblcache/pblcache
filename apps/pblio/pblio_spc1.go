@@ -515,14 +515,21 @@ func main() {
 		spcinfo.asus[1].len,
 		spcinfo.asus[2].len)
 
-	var wg sync.WaitGroup
+	// This channel will be used for the io to return
+	// the latency
 	iotime := make(chan time.Duration, 64)
+
+	// Spawn contexts coroutines
+	var wg sync.WaitGroup
 	stop := time.After(time.Second * time.Duration(runlen))
 	for context := 1; context <= contexts; context++ {
 		wg.Add(1)
 		go spcinfo.Context(&wg, iotime, stop, context)
 	}
 
+	// This goroutine will be used to collect the data
+	// from the io routines and print out to the console
+	// every few seconds
 	var outputwg sync.WaitGroup
 	go func() {
 		defer outputwg.Done()
@@ -559,7 +566,10 @@ func main() {
 		}
 	}()
 
+	// Wait here for all the context goroutines to finish
 	wg.Wait()
+
+	// Now we can close the output goroutine
 	close(iotime)
 	outputwg.Wait()
 }
