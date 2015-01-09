@@ -438,8 +438,10 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 		default:
 			// Get the next io
 			s := spc1.NewSpc1Io(context)
-			err := s.Generate()
-			godbc.Check(err == nil, err)
+			for s.Asu == 0 {
+				err := s.Generate()
+				godbc.Check(err == nil)
+			}
 			godbc.Invariant(s)
 
 			// Check how much time we should wait
