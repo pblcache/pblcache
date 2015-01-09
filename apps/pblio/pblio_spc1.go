@@ -443,13 +443,13 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 			godbc.Invariant(s)
 
 			// Check how much time we should wait
-			sleep_time := start.Add(spc1.When).Sub(lastiotime)
+			sleep_time := start.Add(s.When).Sub(lastiotime)
 			if sleep_time > 0 {
 				time.Sleep(sleep_time)
 			}
 
 			// Send io to io stream
-			iostreams[spc1.Stream] <- spc1
+			iostreams[spc1.Stream] <- s
 
 			lastiotime = time.Now()
 
