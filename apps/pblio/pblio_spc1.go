@@ -437,7 +437,7 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 			return
 		default:
 			// Get the next io
-			s := s.NewSpc1Io(context)
+			s := spc1.NewSpc1Io(context)
 			err := s.Generate()
 			godbc.Check(err == nil, err)
 			godbc.Invariant(s)
@@ -449,7 +449,7 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 			}
 
 			// Send io to io stream
-			iostreams[spc1.Stream] <- s
+			iostreams[s.Stream] <- s
 
 			lastiotime = time.Now()
 
