@@ -20,7 +20,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"github.com/lpabon/tm"
 	"github.com/pblcache/pblcache/apps/pblio/spc"
 	"github.com/pblcache/pblcache/cache"
 	"os"
@@ -140,7 +139,7 @@ func main() {
 
 	// This channel will be used for the io to return
 	// the latency
-	iotime := make(chan time.Duration, 1024)
+	iotime := make(chan *spc.IoStats, 1024)
 
 	// Spawn contexts coroutines
 	var wg sync.WaitGroup
@@ -148,6 +147,10 @@ func main() {
 		wg.Add(1)
 		go spcinfo.Context(&wg, iotime, runlen, context)
 	}
+
+	// Used to collect all the stats
+	spcstats := spc.NewSpcStats()
+	prev_spcstats := spcstats.Copy()
 
 	// This goroutine will be used to collect the data
 	// from the io routines and print out to the console
@@ -157,10 +160,8 @@ func main() {
 	go func() {
 		defer outputwg.Done()
 
-		ios := uint64(0)
 		start := time.Now()
 		totaltime := start
-		latency_mean := tm.TimeDuration{}
 		print_iops := time.After(time.Second * time.Duration(dataperiod))
 
 		var prev_stats *cache.CacheStats
@@ -168,53 +169,46 @@ func main() {
 			prev_stats = c.Stats()
 		}
 
-		for latency := range iotime {
+		for iostat := range iotime {
 
-			// Save the number of ios being sent
-			// and their latency
-			ios++
-			latency_mean.Add(latency)
+			// Save stats
+			spcstats.Collect(iostat)
 
 			// Do this every few seconds
 			select {
 			case <-print_iops:
 				end := time.Now()
+				ios := spcstats.IosDelta(prev_spcstats)
 				iops := float64(ios) / end.Sub(start).Seconds()
 				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms"+
 					"                                   \r",
-					ios, iops, latency_mean.MeanTimeUsecs()/1000)
+					ios, iops, spcstats.LatencyDelta(prev_spcstats))
 
 				// Save stats
 				if c != nil {
 					stats := c.Stats()
 					metrics.WriteString(
 						fmt.Sprintf("%d,"+ // Total time
-							"%d,"+ // Ios
-							"%.2f,"+ // IOPs
-							"%.4f,", // latency in usecs
+							"%v,", // Iops
 							int(end.Sub(totaltime).Seconds()),
-							ios,
-							iops,
-							latency_mean.MeanTimeUsecs()) +
+							iops) +
+							spcstats.CsvDelta(prev_spcstats) +
 							stats.CsvDelta(prev_stats) +
 							"\n")
 					prev_stats = stats
 				} else {
 					metrics.WriteString(
 						fmt.Sprintf("%d,"+ // Total time
-							"%d,"+ // Ios
-							"%.2f,"+ // IOPs
-							"%.4f\n", // latency in usecs
+							"%v,",
 							int(end.Sub(totaltime).Seconds()),
-							ios,
-							iops,
-							latency_mean.MeanTimeUsecs()))
+							iops) +
+							spcstats.CsvDelta(prev_spcstats) +
+							"\n")
 				}
 
 				// Reset counters
-				latency_mean = tm.TimeDuration{}
 				start = time.Now()
-				ios = 0
+				prev_spcstats = spcstats.Copy()
 
 				// Set the timer for the next time
 				print_iops = time.After(time.Second * time.Duration(dataperiod))
@@ -223,9 +217,10 @@ func main() {
 		}
 
 		end := time.Now()
+		ios := spcstats.IosDelta(prev_spcstats)
 		iops := float64(ios) / end.Sub(start).Seconds()
-		fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms",
-			ios, iops, latency_mean.MeanTimeUsecs()/1000)
+		fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms\n",
+			ios, iops, spcstats.LatencyDelta(prev_spcstats))
 
 		fmt.Print("\n")
 	}()

@@ -207,7 +207,7 @@ func read(fp *os.File,
 
 func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 	iostream <-chan *spc1.Spc1Io,
-	iotime chan<- time.Duration) {
+	iotime chan<- *IoStats) {
 	defer wg.Done()
 
 	buffer := make([]byte, 4*KB*64)
@@ -253,7 +253,7 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 
 		// Report back the latency
 		end := time.Now()
-		iotime <- end.Sub(start)
+		iotime <- &IoStats{Io: io, Latency: end.Sub(start)}
 	}
 }
 
@@ -279,7 +279,7 @@ func (s *SpcInfo) Spc1Init(bsu, contexts int) {
 }
 
 func (s *SpcInfo) Context(wg *sync.WaitGroup,
-	iotime chan<- time.Duration,
+	iotime chan<- *IoStats,
 	runlen, context int) {
 
 	defer wg.Done()
