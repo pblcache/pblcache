@@ -182,7 +182,7 @@ func main() {
 				iops := float64(ios) / end.Sub(start).Seconds()
 				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms"+
 					"                                   \r",
-					ios, iops, spcstats.LatencyDelta(prev_spcstats))
+					ios, iops, spcstats.LatencyDeltaUsecs(prev_spcstats)/1000)
 
 				// Save stats
 				if c != nil {
@@ -192,7 +192,7 @@ func main() {
 							"%v,", // Iops
 							int(end.Sub(totaltime).Seconds()),
 							iops) +
-							spcstats.CsvDelta(prev_spcstats) +
+							spcstats.CsvDelta(prev_spcstats, end.Sub(start)) +
 							stats.CsvDelta(prev_stats) +
 							"\n")
 					prev_stats = stats
@@ -202,7 +202,7 @@ func main() {
 							"%v,",
 							int(end.Sub(totaltime).Seconds()),
 							iops) +
-							spcstats.CsvDelta(prev_spcstats) +
+							spcstats.CsvDelta(prev_spcstats, end.Sub(start)) +
 							"\n")
 				}
 
@@ -220,7 +220,7 @@ func main() {
 		ios := spcstats.IosDelta(prev_spcstats)
 		iops := float64(ios) / end.Sub(start).Seconds()
 		fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms\n",
-			ios, iops, spcstats.LatencyDelta(prev_spcstats))
+			ios, iops, spcstats.LatencyDeltaUsecs(prev_spcstats)/1000)
 
 		fmt.Print("\n")
 	}()

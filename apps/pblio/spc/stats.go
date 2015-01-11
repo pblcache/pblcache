@@ -43,12 +43,14 @@ func (i *IoMeter) Collect(iostat *IoStats) {
 	i.Latency.Add(iostat.Latency)
 }
 
-func (i *IoMeter) CsvDelta(prev *IoMeter) string {
+func (i *IoMeter) CsvDelta(prev *IoMeter, delta time.Duration) string {
 	return fmt.Sprintf("%v,"+ // Ios
-		"%v,"+ // KB Transferred
+		"%v,"+ // Bytes Transferred
+		"%v,"+ // MB/s
 		"%v,", // Latency in usecs
 		i.Ios-prev.Ios,
 		(i.Blocks-prev.Blocks)*4*KB,
+		(float64((i.Blocks-prev.Blocks)*4*KB)/float64(MB))/delta.Seconds(),
 		i.Latency.DeltaMeanTimeUsecs(&prev.Latency))
 }
 
@@ -72,10 +74,10 @@ func (a *AsuStats) Collect(iostat *IoStats) {
 	}
 }
 
-func (a *AsuStats) CsvDelta(prev *AsuStats) string {
-	return a.read.CsvDelta(&prev.read) +
-		a.write.CsvDelta(&prev.write) +
-		a.total.CsvDelta(&prev.total)
+func (a *AsuStats) CsvDelta(prev *AsuStats, delta time.Duration) string {
+	return a.read.CsvDelta(&prev.read, delta) +
+		a.write.CsvDelta(&prev.write, delta) +
+		a.total.CsvDelta(&prev.total, delta)
 }
 
 // --------------------------------------------
@@ -87,6 +89,7 @@ type SpcStats struct {
 	Latency  tm.TimeDuration
 }
 
+// dataperiod in seconds is used to calculate MB/s
 func NewSpcStats() *SpcStats {
 	s := &SpcStats{
 		Asustats: make([]*AsuStats, 3),
@@ -126,16 +129,16 @@ func (s *SpcStats) Collect(iostat *IoStats) {
 	}
 }
 
-func (s *SpcStats) CsvDelta(prev *SpcStats) string {
-	return s.read.CsvDelta(&prev.read) +
-		s.write.CsvDelta(&prev.write) +
-		s.total.CsvDelta(&prev.total) +
-		s.Asustats[0].CsvDelta(prev.Asustats[0]) +
-		s.Asustats[1].CsvDelta(prev.Asustats[1]) +
-		s.Asustats[2].CsvDelta(prev.Asustats[2])
+func (s *SpcStats) CsvDelta(prev *SpcStats, delta time.Duration) string {
+	return s.read.CsvDelta(&prev.read, delta) +
+		s.write.CsvDelta(&prev.write, delta) +
+		s.total.CsvDelta(&prev.total, delta) +
+		s.Asustats[0].CsvDelta(prev.Asustats[0], delta) +
+		s.Asustats[1].CsvDelta(prev.Asustats[1], delta) +
+		s.Asustats[2].CsvDelta(prev.Asustats[2], delta)
 }
 
-func (s *SpcStats) LatencyDelta(prev *SpcStats) float64 {
+func (s *SpcStats) LatencyDeltaUsecs(prev *SpcStats) float64 {
 	return s.total.Latency.DeltaMeanTimeUsecs(&prev.total.Latency)
 }
 
