@@ -1,6 +1,6 @@
 #!/usr/bin/env gnuplot
 
-# Generates graphs for IO generated using Pblcache
+# Generates graphs for IO generated without Pblcache
 
 # 1: Time
 # 2: IOPS
@@ -38,16 +38,6 @@
 
 # ASU3 -
 # 39 .. 50
-
-# Cache Stats
-# 51: Read Hit Rate
-# 52: Invalidation Hit Rate
-# 53: Read Hits
-# 54: Invalidation Hits
-# 55: Reads
-# 56: Insertions
-# 57: Evictions
-# 58: Invalidation
 
 set terminal png
 set datafile separator ","
@@ -270,31 +260,4 @@ set output "pblio_asu3_latency.png"
 set ylabel "ASU3 Latency (usecs)"
 plot "pblio.data" using 1:50 every 5 title ""
 
-
-# --------- Cache
-set output "pblio_readhitrate.png"
-set ylabel "Read Hit Rate"
-plot "pblio.data" using 1:51 every 5 title ""
-
-set output "pblio_invalhitrate.png"
-set ylabel "Invalidation Hit Rate"
-plot "pblio.data" using 1:52 every 5 title ""
-
-set output "pblio_reads.png"
-unset ylabel
-plot "pblio.data" using 1:55 every 5 title "Reads", \
-	 "pblio.data" using 1:53 every 5 title "Read Hits"
-
-set output "pblio_insertions.png"
-set ylabel "Insertions"
-plot "pblio.data" using 1:56 every 5 title ""
-
-set output "pblio_inval.png"
-unset ylabel
-plot "pblio.data" using 1:54 every 5 title "Invalidation Hits", \
-	 "pblio.data" using 1:58 every 5 title "Invalidations"
-
-set output "pblio_evictions.png"
-set ylabel "Evictions"
-plot "pblio.data" using 1:57 every 5 title ""
 
