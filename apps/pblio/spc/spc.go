@@ -215,7 +215,7 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 		start := time.Now()
 
 		// Make sure the io is correct
-		io.Invariant()
+		godbc.Invariant(io)
 		if io.Asu == 3 {
 			s.asus[ASU3].fps.WriteAt(
 				buffer[0:io.Blocks*4*KB],
