@@ -89,10 +89,13 @@ func main() {
 	var log *cache.Log
 	var logblocks uint64
 
+	// Show banner
+	fmt.Println("-----")
+	fmt.Println("pblio")
+	fmt.Println("-----")
+
 	// Determine if we need to use the cache
 	if cachefilename != "" {
-		fmt.Printf("Using %s as the cache\n", cachefilename)
-
 		// Create log
 		log, logblocks = cache.NewLog(cachefilename,
 			uint64(cachesize*GB)/blocksize_bytes,
@@ -103,8 +106,12 @@ func main() {
 
 		// Connect cache metadata with log
 		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
+		fmt.Printf("Cache   : %s\n"+
+			"C Size  : %.2f GB\n",
+			cachefilename,
+			float64(logblocks*blocksize_bytes)/GB)
 	} else {
-		fmt.Println("No cache set")
+		fmt.Println("Cache   : None")
 	}
 
 	// Initialize spc1info
@@ -135,11 +142,31 @@ func main() {
 	}
 
 	// Initialize Spc1 workload
-	spcinfo.Spc1Init(bsu, contexts)
+	err = spcinfo.Spc1Init(bsu, contexts)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
 
 	// This channel will be used for the io to return
 	// the latency
 	iotime := make(chan *spc.IoStats, 1024)
+
+	// Before starting, let's print out the sizes
+	// and test information
+	fmt.Printf("ASU1    : %.2f GB\n"+
+		"ASU2    : %.2f GB\n"+
+		"ASU3    : %.2f GB\n"+
+		"BSUs    : %v\n"+
+		"Contexts: %v\n"+
+		"Run time: %v s\n",
+		spcinfo.Size(1),
+		spcinfo.Size(2),
+		spcinfo.Size(3),
+		bsu,
+		contexts,
+		runlen)
+	fmt.Println("-----")
 
 	// Spawn contexts coroutines
 	var wg sync.WaitGroup

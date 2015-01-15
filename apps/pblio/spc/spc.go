@@ -16,6 +16,7 @@
 package spc
 
 import (
+	"fmt"
 	"github.com/lpabon/godbc"
 	"github.com/lpabon/goioworkload/spc1"
 	"github.com/pblcache/pblcache/cache"
@@ -263,19 +264,68 @@ func (s *SpcInfo) Open(asu int, filename string) error {
 	return s.asus[asu-1].Open(filename)
 }
 
-// Must be called after all the ASUs are opened
-func (s *SpcInfo) Spc1Init(bsu, contexts int) {
+// ASU1 + ASU2 + ASU3 = X
+// ASU1 is 45% of X
+// ASU2 is 45% of X
+// ASU3 is 10% of X
+// Call this function after all ASUs are opened
+func (s *SpcInfo) adjustAsuSizes() error {
+	godbc.Require(s.asus[ASU1].len != 0)
+	godbc.Require(s.asus[ASU2].len != 0)
+	godbc.Require(s.asus[ASU3].len != 0)
 
-	godbc.Require(s.asus[0].len != 0)
-	godbc.Require(s.asus[1].len != 0)
-	godbc.Require(s.asus[2].len != 0)
+	// lets start making user ASU1 and ASU2 are equal
+	if s.asus[ASU1].len > s.asus[ASU2].len {
+		s.asus[ASU1].len = s.asus[ASU2].len
+	} else {
+		s.asus[ASU2].len = s.asus[ASU1].len
+	}
+
+	// Now we need to adjust ASU3
+	asu3_correct_size := uint32(float64(2*s.asus[ASU1].len) / 9)
+	if asu3_correct_size > s.asus[ASU3].len {
+		return fmt.Errorf("\nASU3 size is too small: %v KB.\n"+
+			"It must be bigger than 1/9 of 2*ASU1,\n"+
+			"or %v KB for this configuration\n",
+			s.asus[ASU3].len*4, asu3_correct_size*4)
+	} else {
+		s.asus[ASU3].len = asu3_correct_size
+	}
+
+	godbc.Ensure(s.asus[ASU1].len != 0)
+	godbc.Ensure(s.asus[ASU2].len != 0)
+	godbc.Ensure(s.asus[ASU3].len != 0, asu3_correct_size)
+
+	return nil
+}
+
+// Size in GB
+func (s *SpcInfo) Size(asu int) float64 {
+	godbc.Require(asu > 0 && asu < 4, asu)
+
+	return s.asus[asu-1].Size()
+}
+
+// Must be called after all the ASUs are opened
+func (s *SpcInfo) Spc1Init(bsu, contexts int) error {
+	godbc.Require(s.asus[ASU1].len != 0)
+	godbc.Require(s.asus[ASU2].len != 0)
+	godbc.Require(s.asus[ASU3].len != 0)
+
+	// Adjust sizes
+	err := s.adjustAsuSizes()
+	if err != nil {
+		return err
+	}
 
 	// Initialize Spc1 workload
 	spc1.Spc1Init(bsu,
 		contexts,
-		s.asus[0].len,
-		s.asus[1].len,
-		s.asus[2].len)
+		s.asus[ASU1].len,
+		s.asus[ASU2].len,
+		s.asus[ASU3].len)
+
+	return nil
 }
 
 func (s *SpcInfo) Context(wg *sync.WaitGroup,

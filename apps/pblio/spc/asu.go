@@ -39,28 +39,35 @@ func NewAsu(usedirectio bool) *Asu {
 	}
 }
 
+// Size in GB
+func (a *Asu) Size() float64 {
+	return float64(a.len) * 4 * KB / GB
+}
+
 func (a *Asu) Open(filename string) error {
 	var err error
 
 	godbc.Require(filename != "")
 
+	// Set the appropriate flags
 	flags := os.O_RDWR | os.O_EXCL
 	if a.usedirectio {
 		flags |= syscall.O_DIRECT
 	}
 
+	// Open the file
 	a.fps, err = os.OpenFile(filename, flags, os.ModePerm)
 	if err != nil {
 		return err
 	}
 
-	filestat, err := a.fps.Stat()
+	// Get storage size
+	var size int64
+	size, err = a.fps.Seek(0, os.SEEK_END)
 	if err != nil {
 		return err
 	}
-
-	// Length in 4KB blocks
-	a.len = uint32(filestat.Size() / int64(4*KB))
+	a.len = uint32(size / int64(4*KB))
 
 	godbc.Ensure(a.fps != nil, a.fps)
 	godbc.Ensure(a.len > 0, a.len)
