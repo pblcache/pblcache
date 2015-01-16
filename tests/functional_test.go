@@ -15,6 +15,7 @@
 //
 package tests
 
+/* -- Needs to be redone
 import (
 	"fmt"
 	"github.com/lpabon/bufferio"
@@ -139,7 +140,7 @@ func TestSimpleCache(t *testing.T) {
 		wgIo.Add(1)
 		go func() {
 			defer wgIo.Done()
-			z := zipf.NewZipfWorkload(actual_blocks*10, 60 /* read % */)
+			z := zipf.NewZipfWorkload(actual_blocks*10, 60) //
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 			here := make(chan *message.Message, 1)
 
@@ -220,3 +221,5 @@ func TestSimpleCache(t *testing.T) {
 	// Cleanup
 	os.Remove(logfile)
 }
+
+*/

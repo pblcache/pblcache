@@ -19,6 +19,8 @@ import (
 	"testing"
 )
 
+/*
+
 func TestGetIoPkt(t *testing.T) {
 	c := make(chan *Message)
 	m := NewMsgGet()
@@ -104,3 +106,5 @@ func TestMsgIoDone(t *testing.T) {
 	assert(t, newD.i == 2)
 	assert(t, string(io.Buffer) == "TESTSTRING")
 }
+
+*/
