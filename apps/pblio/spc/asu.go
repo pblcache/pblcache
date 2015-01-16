@@ -16,6 +16,7 @@
 package spc
 
 import (
+	"fmt"
 	"github.com/lpabon/godbc"
 	"os"
 	"syscall"
@@ -28,14 +29,16 @@ const (
 )
 
 type Asu struct {
-	fps         *os.File
+	fps         []*os.File
 	len         uint32
 	usedirectio bool
+	fpsize      int64
 }
 
 func NewAsu(usedirectio bool) *Asu {
 	return &Asu{
 		usedirectio: usedirectio,
+		fps:         make([]*os.File, 0),
 	}
 }
 
@@ -45,7 +48,6 @@ func (a *Asu) Size() float64 {
 }
 
 func (a *Asu) Open(filename string) error {
-	var err error
 
 	godbc.Require(filename != "")
 
@@ -56,21 +58,50 @@ func (a *Asu) Open(filename string) error {
 	}
 
 	// Open the file
-	a.fps, err = os.OpenFile(filename, flags, os.ModePerm)
+	fp, err := os.OpenFile(filename, flags, os.ModePerm)
 	if err != nil {
 		return err
 	}
 
 	// Get storage size
 	var size int64
-	size, err = a.fps.Seek(0, os.SEEK_END)
+	size, err = fp.Seek(0, os.SEEK_END)
 	if err != nil {
 		return err
 	}
-	a.len = uint32(size / int64(4*KB))
+	if size == 0 {
+		return fmt.Errorf("Size of %s cannot be zero", filename)
+	}
 
-	godbc.Ensure(a.fps != nil, a.fps)
+	// Check max size for all fps in this asu
+	if a.fpsize == 0 || a.fpsize > size {
+		a.fpsize = size
+	}
+
+	// Append to ASU
+	a.fps = append(a.fps, fp)
+	a.len = uint32(a.fpsize/(4*KB)) * uint32(len(a.fps))
+
 	godbc.Ensure(a.len > 0, a.len)
+	godbc.Ensure(len(a.fps) > 0)
+	godbc.Ensure(a.fpsize > 0)
 
 	return nil
+}
+
+func (a *Asu) ReadAt(b []byte, offset int64) (n int, err error) {
+
+	fp := int(offset / a.fpsize)
+	fp_off := int64(offset % a.fpsize)
+	godbc.Check(fp < len(a.fps), fp, len(a.fps))
+
+	return a.fps[fp].ReadAt(b, fp_off)
+}
+
+func (a *Asu) WriteAt(b []byte, offset int64) (n int, err error) {
+	fp := int(offset / a.fpsize)
+	fp_off := int64(offset % a.fpsize)
+	godbc.Check(fp < len(a.fps), fp, len(a.fps))
+
+	return a.fps[fp].ReadAt(b, fp_off)
 }

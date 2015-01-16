@@ -21,7 +21,7 @@ import (
 	"github.com/lpabon/goioworkload/spc1"
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/message"
-	"os"
+	"io"
 	"sync"
 	"time"
 )
@@ -56,7 +56,7 @@ func NewSpcInfo(c *cache.Cache,
 	return s
 }
 
-func readandstore(fp *os.File,
+func readandstore(fp io.ReaderAt,
 	c *cache.Cache,
 	devid uint16,
 	offset uint64,
@@ -76,7 +76,7 @@ func readandstore(fp *os.File,
 	c.Put(m)
 }
 
-func write(fp *os.File,
+func write(fp io.WriterAt,
 	c *cache.Cache,
 	devid uint16,
 	offset, blocksize_bytes uint64,
@@ -112,7 +112,7 @@ func write(fp *os.File,
 	<-here
 }
 
-func read(fp *os.File,
+func read(fp io.ReaderAt,
 	c *cache.Cache,
 	devid uint16,
 	offset, blocksize_bytes uint64,
@@ -218,17 +218,17 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 		// Make sure the io is correct
 		godbc.Invariant(io)
 		if io.Asu == 3 {
-			s.asus[ASU3].fps.WriteAt(
+			s.asus[ASU3].WriteAt(
 				buffer[0:io.Blocks*4*KB],
 				int64(io.Offset)*int64(4*KB))
 		} else {
 			// Send the io
 			if io.Isread {
 				if s.pblcache == nil {
-					s.asus[io.Asu-1].fps.ReadAt(buffer[0:io.Blocks*4*KB],
+					s.asus[io.Asu-1].ReadAt(buffer[0:io.Blocks*4*KB],
 						int64(io.Offset)*int64(4*KB))
 				} else {
-					read(s.asus[io.Asu-1].fps,
+					read(s.asus[io.Asu-1],
 						s.pblcache,
 						uint16(io.Asu),
 						uint64(io.Offset)*uint64(4*KB),
@@ -238,10 +238,10 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 				}
 			} else {
 				if s.pblcache == nil {
-					s.asus[io.Asu-1].fps.WriteAt(buffer[0:io.Blocks*4*KB],
+					s.asus[io.Asu-1].WriteAt(buffer[0:io.Blocks*4*KB],
 						int64(io.Offset)*int64(4*KB))
 				} else {
-					write(s.asus[io.Asu-1].fps,
+					write(s.asus[io.Asu-1],
 						s.pblcache,
 						uint16(io.Asu),
 						uint64(io.Offset)*uint64(4*KB),
