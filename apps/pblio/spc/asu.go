@@ -103,7 +103,7 @@ func (a *Asu) WriteAt(b []byte, offset int64) (n int, err error) {
 	fp_off := int64(offset % a.fpsize)
 	godbc.Check(fp < len(a.fps), fp, len(a.fps))
 
-	return a.fps[fp].ReadAt(b, fp_off)
+	return a.fps[fp].WriteAt(b, fp_off)
 }
 
 func (a *Asu) Close() {
