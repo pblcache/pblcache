@@ -24,6 +24,7 @@ import (
 	"github.com/pblcache/pblcache/cache"
 	"os"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"time"
 )
@@ -118,21 +119,28 @@ func main() {
 	spcinfo := spc.NewSpcInfo(c, usedirectio, blocksize)
 
 	// Open asus
-	err = spcinfo.Open(1, asu1)
-	if err != nil {
-		fmt.Print(err)
-		return
+	for _, v := range strings.Split(asu1, ",") {
+		err = spcinfo.Open(1, v)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
 	}
-	err = spcinfo.Open(2, asu2)
-	if err != nil {
-		fmt.Print(err)
-		return
+	for _, v := range strings.Split(asu2, ",") {
+		err = spcinfo.Open(2, v)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
 	}
-	err = spcinfo.Open(3, asu3)
-	if err != nil {
-		fmt.Print(err)
-		return
+	for _, v := range strings.Split(asu3, ",") {
+		err = spcinfo.Open(3, v)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
 	}
+	defer spcinfo.Close()
 
 	// Start cpu profiling
 	if cpuprofile {
@@ -265,8 +273,6 @@ func main() {
 		log.Close()
 		fmt.Print(c)
 		fmt.Print(log)
-	} else {
-		fmt.Println("No cache stats")
 	}
 	metrics.Flush()
 

@@ -388,3 +388,9 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 	}
 	iostreamwg.Wait()
 }
+
+func (s *SpcInfo) Close() {
+	for _, asu := range s.asus {
+		asu.Close()
+	}
+}

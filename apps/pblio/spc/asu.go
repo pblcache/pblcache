@@ -105,3 +105,9 @@ func (a *Asu) WriteAt(b []byte, offset int64) (n int, err error) {
 
 	return a.fps[fp].ReadAt(b, fp_off)
 }
+
+func (a *Asu) Close() {
+	for _, fp := range a.fps {
+		fp.Close()
+	}
+}
