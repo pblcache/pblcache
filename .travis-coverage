@@ -4,7 +4,7 @@
 # the tool requires that it be used only on one package when
 # capturing the coverage
 # This is why we need this little script here.
-packages="./cache ./apps/pblcached ./message"
+packages="./cache ./apps/pblio/spc ./message"
 COVERFILE=packagecover.out
 
 coverage()
