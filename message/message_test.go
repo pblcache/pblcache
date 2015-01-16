@@ -15,13 +15,14 @@
 //
 package message
 
+/* -- Needs update
+
 import (
 	"github.com/lpabon/tm"
 	"runtime"
 	"testing"
 )
 
-/* -- Needs update
 func TestTime(t *testing.T) {
 	var td tm.TimeDuration
 	m := &Message{}

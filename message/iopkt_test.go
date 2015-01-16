@@ -15,11 +15,10 @@
 //
 package message
 
+/*
 import (
 	"testing"
 )
-
-/*
 
 func TestGetIoPkt(t *testing.T) {
 	c := make(chan *Message)
