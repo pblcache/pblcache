@@ -12,9 +12,11 @@ env:
 matrix:
   include:
   - go: 1.2.2
-    env: OPTIONS="-cpu 2" COVERAGE="true"
+    env: OPTIONS=""
   - go: 1.3.3
-    env: OPTIONS="-race -cpu 2"
+    env: OPTIONS="-race"
+  - go: 1.4.1
+    env: OPTIONS="-race" COVERAGE="true"
 script:
 - go fmt ./... | wc -l | grep 0
 - go vet ./...
