@@ -24,6 +24,7 @@ import (
 
 type IoStats struct {
 	Io      *spc1.Spc1Io
+	Start   time.Time
 	Latency time.Duration
 }
 
