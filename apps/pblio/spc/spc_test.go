@@ -235,13 +235,19 @@ func TestSpcContext(t *testing.T) {
 	err = s.Spc1Init(bsu, contexts)
 	tests.Assert(t, err == nil)
 
-	var wg sync.WaitGroup
+	// Setup channel for Context() subroutines
+	// to send stats back
 	iotime := make(chan *IoStats)
 	runlen := 3
 	teststart := time.Now()
+
+	// Create context goroutine
+	var wg sync.WaitGroup
 	wg.Add(1)
 	go s.Context(&wg, iotime, runlen, contexts)
 
+	// Create a go routine to get stats
+	// from channel
 	var iostatwg sync.WaitGroup
 	iostatwg.Add(1)
 	go func() {
@@ -260,9 +266,11 @@ func TestSpcContext(t *testing.T) {
 		}
 	}()
 
+	// Wait here for Context() to finish
 	wg.Wait()
 	end := time.Now()
 
+	// Shutdown iotime channel reader
 	close(iotime)
 	iostatwg.Wait()
 
@@ -270,5 +278,8 @@ func TestSpcContext(t *testing.T) {
 	// is very busy
 	tests.Assert(t, end.Sub(teststart).Seconds() < 10)
 	tests.Assert(t, end.Sub(teststart).Seconds() > 1)
+
+	// Cleanup
+	s.Close()
 
 }
