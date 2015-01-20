@@ -18,6 +18,7 @@ package spc
 import (
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/tests"
+	"os"
 	"testing"
 )
 
@@ -30,5 +31,41 @@ func TestNewSpcInfo(t *testing.T) {
 
 	s := NewSpcInfo(cache, usedirectio, blocksize)
 	tests.Assert(t, s.pblcache == cache)
+	tests.Assert(t, s.blocksize == blocksize)
+	tests.Assert(t, len(s.asus) == 3)
+	tests.Assert(t, nil != s.asus[ASU1])
+	tests.Assert(t, nil != s.asus[ASU2])
+	tests.Assert(t, nil != s.asus[ASU3])
+	tests.Assert(t, usedirectio == s.asus[ASU1].usedirectio)
+	tests.Assert(t, usedirectio == s.asus[ASU2].usedirectio)
+	tests.Assert(t, usedirectio == s.asus[ASU3].usedirectio)
+}
 
+func TestSpcOpen(t *testing.T) {
+
+	// initialize
+	var cache *cache.Cache
+	usedirectio := false
+	blocksize := 4 * KB
+	s := NewSpcInfo(cache, usedirectio, blocksize)
+
+	// Get a test file
+	tmpfile := tests.Tempfile()
+
+	// No file exists
+	err := s.Open(1, tmpfile)
+	tests.Assert(t, err != nil)
+
+	// Create the file and open it
+	buf := make([]byte, 16*4*KB)
+	fp, err := os.Create(tmpfile)
+	tests.Assert(t, err == nil)
+	fp.Write(buf)
+	fp.Close()
+	defer os.Remove(tmpfile)
+
+	// Now open, and it should work
+	err = s.Open(1, tmpfile)
+	tests.Assert(t, err == nil)
+	tests.Assert(t, len(s.asus[ASU1].fps) == 1)
 }
