@@ -67,5 +67,50 @@ func TestSpcOpen(t *testing.T) {
 	// Now open, and it should work
 	err = s.Open(1, tmpfile)
 	tests.Assert(t, err == nil)
-	tests.Assert(t, len(s.asus[ASU1].fps) == 1)
+}
+
+func TestSpcAdjustAsuSizes(t *testing.T) {
+
+	// initialize
+	var cache *cache.Cache
+	usedirectio := false
+	blocksize := 4 * KB
+	s := NewSpcInfo(cache, usedirectio, blocksize)
+
+	// Setup some fake data
+	s.asus[ASU1].len = 100
+	s.asus[ASU2].len = 200
+	s.asus[ASU3].len = 50
+	err := s.adjustAsuSizes()
+
+	// asu1 must be equal to asu2
+	tests.Assert(t, err == nil)
+	tests.Assert(t, s.asus[ASU1].len == 100)
+	tests.Assert(t, s.asus[ASU2].len == 100)
+	tests.Assert(t, s.asus[ASU3].len == 22)
+
+	// Setup some fake data
+	s.asus[ASU1].len = 200
+	s.asus[ASU2].len = 100
+	s.asus[ASU3].len = 50
+	err = s.adjustAsuSizes()
+
+	// asu1 must be equal to asu2
+	tests.Assert(t, err == nil)
+	tests.Assert(t, s.asus[ASU1].len == 100)
+	tests.Assert(t, s.asus[ASU2].len == 100)
+	tests.Assert(t, s.asus[ASU3].len == 22)
+
+	// Setup some fake data
+	s.asus[ASU1].len = 100
+	s.asus[ASU2].len = 100
+	s.asus[ASU3].len = 5
+	err = s.adjustAsuSizes()
+
+	// asu3 will error since it is not large enough
+	tests.Assert(t, err != nil)
+	tests.Assert(t, s.asus[ASU1].len == 100)
+	tests.Assert(t, s.asus[ASU2].len == 100)
+	tests.Assert(t, s.asus[ASU3].len == 5)
+
 }
