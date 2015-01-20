@@ -16,6 +16,7 @@
 package spc
 
 import (
+	"github.com/lpabon/goioworkload/spc1"
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/tests"
 	"os"
@@ -131,4 +132,47 @@ func TestSpcSize(t *testing.T) {
 	size := s.Size(1)
 	tests.Assert(t, size == 40)
 
+}
+
+func TestSpc1Init(t *testing.T) {
+
+	// initialize
+	var cache *cache.Cache
+	usedirectio := false
+	blocksize := 4 * KB
+	s := NewSpcInfo(cache, usedirectio, blocksize)
+
+	// Set fake len
+	s.asus[ASU1].len = 55
+	s.asus[ASU2].len = 45
+
+	// Set asu3 to a value that is too small
+	s.asus[ASU3].len = 1
+
+	bsu := 50
+	contexts := 1
+	err := s.Spc1Init(bsu, contexts)
+
+	// It should not accept a value of asu3
+	// because it is too small
+	tests.Assert(t, err != nil)
+
+	// Set fake len
+	s.asus[ASU1].len = 55
+	s.asus[ASU2].len = 45
+	s.asus[ASU3].len = 10
+	err = s.Spc1Init(bsu, contexts)
+
+	// Now it should succeed
+	tests.Assert(t, err == nil)
+
+	// Check that the sizes where adjusted
+	tests.Assert(t, s.asus[ASU1].len == 45)
+	tests.Assert(t, s.asus[ASU2].len == 45)
+	tests.Assert(t, s.asus[ASU3].len == 10)
+
+	// Check spc1 was initialized
+	io := spc1.NewSpc1Io(1)
+	err = io.Generate()
+	tests.Assert(t, err == nil)
 }
