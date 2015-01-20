@@ -20,8 +20,31 @@ import (
 	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/tests"
 	"os"
+	"sync"
 	"testing"
+	"time"
 )
+
+// We could use Fallocate, but some test CI systems
+// do not support it, like Travis-ci.org.
+func createfile(filename string, size int64) error {
+
+	buf := make([]byte, size)
+
+	// Create the file store some data
+	fp, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+
+	// Write the buffer
+	fp.Write(buf)
+
+	// Cleanup
+	fp.Close()
+
+	return nil
+}
 
 func TestNewSpcInfo(t *testing.T) {
 
@@ -58,11 +81,8 @@ func TestSpcOpen(t *testing.T) {
 	tests.Assert(t, err != nil)
 
 	// Create the file and open it
-	buf := make([]byte, 16*4*KB)
-	fp, err := os.Create(tmpfile)
+	err = createfile(tmpfile, 16*4*KB)
 	tests.Assert(t, err == nil)
-	fp.Write(buf)
-	fp.Close()
 	defer os.Remove(tmpfile)
 
 	// Now open, and it should work
@@ -175,4 +195,80 @@ func TestSpc1Init(t *testing.T) {
 	io := spc1.NewSpc1Io(1)
 	err = io.Generate()
 	tests.Assert(t, err == nil)
+}
+
+func TestSpcContext(t *testing.T) {
+
+	// initialize
+	var cache *cache.Cache
+	usedirectio := false
+	blocksize := 4 * KB
+	s := NewSpcInfo(cache, usedirectio, blocksize)
+
+	// Setup asus for I/O
+	asu1file := tests.Tempfile()
+	err := createfile(asu1file, 45*MB)
+	tests.Assert(t, err == nil)
+	defer os.Remove(asu1file)
+
+	asu2file := tests.Tempfile()
+	err = createfile(asu2file, 45*MB)
+	tests.Assert(t, err == nil)
+	defer os.Remove(asu2file)
+
+	asu3file := tests.Tempfile()
+	err = createfile(asu3file, 10*MB)
+	tests.Assert(t, err == nil)
+	defer os.Remove(asu3file)
+
+	// Open files
+	err = s.Open(1, asu1file)
+	tests.Assert(t, err == nil)
+	err = s.Open(2, asu2file)
+	tests.Assert(t, err == nil)
+	err = s.Open(3, asu3file)
+	tests.Assert(t, err == nil)
+
+	// Initialize
+	bsu := 50
+	contexts := 1
+	err = s.Spc1Init(bsu, contexts)
+	tests.Assert(t, err == nil)
+
+	var wg sync.WaitGroup
+	iotime := make(chan *IoStats)
+	runlen := 3
+	teststart := time.Now()
+	wg.Add(1)
+	go s.Context(&wg, iotime, runlen, contexts)
+
+	var iostatwg sync.WaitGroup
+	iostatwg.Add(1)
+	go func() {
+		defer iostatwg.Done()
+
+		for iostat := range iotime {
+			if iostat == nil {
+				t.Error("iostat is nil")
+			}
+			if iostat.Io == nil {
+				t.Errorf("iostat return nil Io")
+			}
+			if iostat.Start.Before(teststart) {
+				t.Errorf("iostat returned a time in the past")
+			}
+		}
+	}()
+
+	wg.Wait()
+	end := time.Now()
+
+	close(iotime)
+	iostatwg.Wait()
+
+	// These are quite big, but just in case a test framework
+	// is very busy
+	tests.Assert(t, end.Sub(teststart).Seconds() < 10)
+	tests.Assert(t, end.Sub(teststart).Seconds() > 1)
+
 }
