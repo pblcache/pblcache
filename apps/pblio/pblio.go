@@ -17,16 +17,15 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
-	"github.com/lpabon/godbc"
-	"github.com/lpabon/goioworkload/zipf"
+	"github.com/pblcache/pblcache/apps/pblio/spc"
 	"github.com/pblcache/pblcache/cache"
-	"github.com/pblcache/pblcache/message"
-	"math/rand"
 	"os"
+	"runtime/pprof"
+	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -37,400 +36,245 @@ const (
 )
 
 var (
-	filename, cachefilename string
-	runtime, cachesize      int
-	blocksize, iogenerators int
-	reads                   int
-	usedirectio             bool
-
-	// From spc1.c NetApp (BSD-lic)
-	SMIX_LENGTHS = []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-		2, 2, 2, 2, 2, 2,
-		4, 4, 4, 4, 4,
-		8, 8,
-		16, 16,
-		32,
-		64,
-	}
+	asu1, asu2, asu3         string
+	cachefilename, pbliodata string
+	runlen, cachesize        int
+	blocksize, contexts      int
+	bsu, dataperiod          int
+	usedirectio, cpuprofile  bool
 )
 
 func init() {
-	flag.StringVar(&filename, "filename", "", "\n\tStorage back end file to read and write")
+	flag.StringVar(&asu1, "asu1", "", "\n\tASU1 - Data Store")
+	flag.StringVar(&asu2, "asu2", "", "\n\tASU2 - User Store")
+	flag.StringVar(&asu3, "asu3", "", "\n\tLog")
 	flag.StringVar(&cachefilename, "cache", "", "\n\tCache file name")
+	flag.IntVar(&bsu, "bsu", 50, "\n\tNumber of BSUs (Business Scaling Units)."+
+		"\n\tEach BSU requires 50 IOPs from the back end storage")
 	flag.IntVar(&cachesize, "cachesize", 8, "\n\tCache size in GB")
-	flag.IntVar(&runtime, "runtime", 300, "\n\tRuntime in seconds")
+	flag.IntVar(&runlen, "runlen", 300, "\n\tBenchmark run time length in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
-	flag.IntVar(&iogenerators, "iogenerators", 64, "\n\tNumber of io generators")
-	flag.IntVar(&reads, "reads", 65, "\n\tRead percentage (0-100)")
-	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on filename")
-}
-
-func smix(r *rand.Rand) int {
-	return SMIX_LENGTHS[r.Intn(len(SMIX_LENGTHS))]
-}
-
-func write(fp *os.File,
-	c *cache.Cache,
-	offset, blocksize_bytes uint64,
-	nblocks int,
-	buffer []byte) {
-
-	godbc.Require(len(buffer)%(4*KB) == 0)
-	godbc.Require(blocksize_bytes%(4*KB) == 0)
-
-	here := make(chan *message.Message, nblocks)
-
-	// Send invalidates for each block
-	msgs := nblocks
-	for block := 0; block < nblocks; block++ {
-		msg := message.NewMsgInvalidate()
-		msg.RetChan = here
-
-		buffer_offset := uint64(block) * blocksize_bytes
-		current_offset := offset + buffer_offset
-		iopkt := msg.IoPkt()
-		iopkt.Offset = current_offset
-
-		msg.TimeStart()
-		c.Msgchan <- msg
-	}
-
-	for m := range here {
-		if false {
-			// Add stats
-			m.TimeElapsed()
-		}
-
-		msgs--
-		if msgs == 0 {
-			break
-		}
-	}
-
-	// Write to storage back end
-	// :TODO: check return status
-	fp.WriteAt(buffer, int64(offset))
-
-	// Now write to cache
-	msgs = nblocks
-	for block := 0; block < nblocks; block++ {
-		msg := message.NewMsgPut()
-		msg.RetChan = here
-
-		buffer_offset := uint64(block) * blocksize_bytes
-		current_offset := offset + buffer_offset
-		iopkt := msg.IoPkt()
-		iopkt.Offset = current_offset
-		iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-		godbc.Check(len(iopkt.Buffer)%4*KB == 0)
-		msg.Priv = block
-		c.Msgchan <- msg
-	}
-
-	for m := range here {
-		if false {
-			// Add stats
-			m.TimeElapsed()
-		}
-
-		msgs--
-		if msgs == 0 {
-			break
-		}
-	}
-
-}
-
-func read(fp *os.File,
-	c *cache.Cache,
-	offset, blocksize_bytes uint64,
-	nblocks int,
-	buffer []byte) {
-
-	godbc.Require(len(buffer)%(4*KB) == 0)
-	godbc.Require(blocksize_bytes%(4*KB) == 0)
-
-	here := make(chan *message.Message, nblocks)
-
-	msgs := nblocks
-	for block := 0; block < nblocks; block++ {
-		msg := message.NewMsgGet()
-		msg.RetChan = here
-
-		buffer_offset := uint64(block) * blocksize_bytes
-		current_offset := offset + buffer_offset
-		iopkt := msg.IoPkt()
-		iopkt.Offset = current_offset
-		iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-		godbc.Check(len(iopkt.Buffer)%4*KB == 0)
-		msg.Priv = block
-		c.Msgchan <- msg
-	}
-
-	hitmap := make([]bool, nblocks)
-	anyhit := false
-	for m := range here {
-		msgs--
-		if m.Err == nil {
-			anyhit = true
-			block := m.Priv.(int)
-			hitmap[block] = true
-		}
-		if msgs == 0 {
-			break
-		}
-	}
-
-	if anyhit == false {
-		// Read the whole thing from backend
-		fp.ReadAt(buffer, int64(offset))
-
-		// Insert each one into cache
-		msgs = nblocks
-		for block := 0; block < nblocks; block++ {
-			msg := message.NewMsgPut()
-			msg.RetChan = here
-
-			buffer_offset := uint64(block) * blocksize_bytes
-			current_offset := offset + buffer_offset
-			iopkt := msg.IoPkt()
-			iopkt.Offset = current_offset
-			iopkt.Buffer = buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-			godbc.Check(len(iopkt.Buffer)%(4*KB) == 0)
-			msg.Priv = block
-			c.Msgchan <- msg
-		}
-
-		for m := range here {
-			msgs--
-			if msgs == 0 {
-				break
-			}
-			if m.Err != nil {
-				fmt.Printf("ERROR inserting to cache\n")
-			}
-		}
-
-	} else {
-		var wg sync.WaitGroup
-		for block := 0; block < nblocks; block++ {
-			if !hitmap[block] {
-
-				wg.Add(1)
-				go func(block int) {
-					defer wg.Done()
-
-					buffer_offset := uint64(block) * blocksize_bytes
-					current_offset := offset + buffer_offset
-					b := buffer[buffer_offset:(buffer_offset + blocksize_bytes)]
-					godbc.Check(len(b)%(4*KB) == 0)
-					fp.ReadAt(b, int64(current_offset))
-					cache_sput(c, current_offset, b)
-				}(block)
-
-			}
-		}
-		wg.Wait()
-	}
-
-}
-
-func cache_sput(c *cache.Cache,
-	offset uint64,
-	buffer []byte) error {
-
-	if c != nil {
-		here := make(chan *message.Message)
-		msg := message.NewMsgPut()
-		msg.RetChan = here
-		iopkt := msg.IoPkt()
-		iopkt.Offset = offset
-		iopkt.Buffer = buffer
-		c.Msgchan <- msg
-		<-here
-
-		//fmt.Print("p")
-		return msg.Err
-	} else {
-		return nil
-	}
-}
-
-func cache_sinval(c *cache.Cache,
-	offset uint64) error {
-
-	if c != nil {
-		here := make(chan *message.Message)
-		msg := message.NewMsgInvalidate()
-		msg.RetChan = here
-		iopkt := msg.IoPkt()
-		iopkt.Offset = offset
-		c.Msgchan <- msg
-		<-here
-
-		//fmt.Print("i")
-		return msg.Err
-	} else {
-		return nil
-	}
-}
-
-func cache_sget(c *cache.Cache, offset uint64, buffer []byte) error {
-
-	if c != nil {
-		here := make(chan *message.Message)
-		msg := message.NewMsgGet()
-		msg.RetChan = here
-		iopkt := msg.IoPkt()
-		iopkt.Offset = offset
-		iopkt.Buffer = buffer
-		c.Msgchan <- msg
-		<-here
-
-		//fmt.Print("g")
-		return msg.Err
-	} else {
-		return cache.ErrNotFound
-	}
+	flag.IntVar(&contexts, "contexts", 1, "\n\tNumber of contexts.  Each context runs its own SPC1 generator"+
+		"\n\tEach context also has 8 streams.  Four(4) streams for ASU1, three(3)"+
+		"\n\tfor ASU2, and one for ASU3. Values are set in spc1.c:188")
+	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
+	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
+	flag.StringVar(&pbliodata, "data", "pblio.data", "\n\tStats file in CSV format")
+	flag.IntVar(&dataperiod, "dataperiod", 5, "\n\tNumber of seconds per data collected and saved in the csv file")
 }
 
 func main() {
 	flag.Parse()
 
-	if filename == "" {
-		fmt.Print("filename must be set\n")
+	if asu1 == "" ||
+		asu2 == "" ||
+		asu3 == "" {
+		fmt.Print("ASU files must be set\n")
 		return
 	}
 
-	if (0 > reads) || (reads > 100) {
-		fmt.Printf("Invalid value for reads")
-		return
-	}
-
-	// Open file
-	var fp *os.File
-	var err error
-	if usedirectio {
-		fp, err = os.OpenFile(filename, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
-	} else {
-		fp, err = os.OpenFile(filename, os.O_RDWR|os.O_EXCL, os.ModePerm)
-	}
+	// Open stats file
+	fp, err := os.Create(pbliodata)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Print(err)
 		return
 	}
-
-	// Get file size
-	filestat, err := fp.Stat()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	filesize := uint64(filestat.Size())
+	metrics := bufio.NewWriter(fp)
+	defer fp.Close()
 
 	// Setup number of blocks
 	blocksize_bytes := uint64(blocksize * KB)
-	fileblocks := uint64(filesize / blocksize_bytes)
-	mbs := make(chan int, 32)
 
 	// Open cache
 	var c *cache.Cache
 	var log *cache.Log
 	var logblocks uint64
 
+	// Show banner
+	fmt.Println("-----")
+	fmt.Println("pblio")
+	fmt.Println("-----")
+
 	// Determine if we need to use the cache
 	if cachefilename != "" {
-		fmt.Printf("Using %s as the cache\n", cachefilename)
-
 		// Create log
 		log, logblocks = cache.NewLog(cachefilename,
 			uint64(cachesize*GB)/blocksize_bytes,
 			blocksize_bytes,
 			(512*KB)/blocksize_bytes,
-			0 /* buffer cache has been removed for now */)
+			0, // buffer cache has been removed for now
+		)
 
 		// Connect cache metadata with log
-		c = cache.NewCache(logblocks, log.Msgchan)
+		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
+		fmt.Printf("Cache   : %s\n"+
+			"C Size  : %.2f GB\n",
+			cachefilename,
+			float64(logblocks*blocksize_bytes)/GB)
 	} else {
-		fmt.Println("No cache set")
+		fmt.Println("Cache   : None")
 	}
 
-	// Start timer
-	start := time.Now()
+	// Initialize spc1info
+	spcinfo := spc.NewSpcInfo(c, usedirectio, blocksize)
 
-	// Start IO generators
-	var wg sync.WaitGroup
-	for gen := 0; gen < iogenerators; gen++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			z := zipf.NewZipfWorkload(fileblocks, reads /* read % */)
-			stop := time.After(time.Second * time.Duration(runtime))
-			buffer := make([]byte, blocksize_bytes*64 /*max in smix*/)
-
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-					block, isread := z.ZipfGenerate()
-					offset := block * blocksize_bytes
-					nblocks := smix(r)
-
-					if isread {
-						if c != nil {
-							read(fp, c, offset,
-								blocksize_bytes, nblocks,
-								buffer[0:uint64(nblocks)*blocksize_bytes])
-						} else {
-							fp.ReadAt(buffer[0:uint64(nblocks)*blocksize_bytes], int64(offset))
-						}
-						mbs <- nblocks
-					} else {
-						if c != nil {
-							write(fp, c, offset,
-								blocksize_bytes, nblocks,
-								buffer[0:uint64(nblocks)*blocksize_bytes])
-						} else {
-							fp.WriteAt(buffer[0:blocksize_bytes], int64(offset))
-						}
-						mbs <- nblocks
-					}
-				}
-			}
-		}()
-	}
-
-	var mbswg sync.WaitGroup
-	mbswg.Add(1)
-	go func() {
-		defer mbswg.Done()
-		var num_blocks int
-
-		for ioblocks := range mbs {
-			num_blocks += ioblocks
+	// Open asus
+	for _, v := range strings.Split(asu1, ",") {
+		err = spcinfo.Open(1, v)
+		if err != nil {
+			fmt.Print(err)
+			return
 		}
-		total_duration := time.Now().Sub(start)
+	}
+	for _, v := range strings.Split(asu2, ",") {
+		err = spcinfo.Open(2, v)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
+	}
+	for _, v := range strings.Split(asu3, ",") {
+		err = spcinfo.Open(3, v)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
+	}
+	defer spcinfo.Close()
 
-		fmt.Printf("Bandwidth: %.1f MB/s\n",
-			((float64(blocksize_bytes)*
-				float64(num_blocks))/(1024.0*1024.0))/
-				float64(total_duration.Seconds()))
-		fmt.Printf("Seconds: %.2f\n", total_duration.Seconds())
-		fmt.Printf("IO blocks: %d\n", num_blocks)
+	// Start cpu profiling
+	if cpuprofile {
+		f, _ := os.Create("cpuprofile")
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
+	// Initialize Spc1 workload
+	err = spcinfo.Spc1Init(bsu, contexts)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
+
+	// This channel will be used for the io to return
+	// the latency
+	iotime := make(chan *spc.IoStats, 1024)
+
+	// Before starting, let's print out the sizes
+	// and test information
+	fmt.Printf("ASU1    : %.2f GB\n"+
+		"ASU2    : %.2f GB\n"+
+		"ASU3    : %.2f GB\n"+
+		"BSUs    : %v\n"+
+		"Contexts: %v\n"+
+		"Run time: %v s\n",
+		spcinfo.Size(1),
+		spcinfo.Size(2),
+		spcinfo.Size(3),
+		bsu,
+		contexts,
+		runlen)
+	fmt.Println("-----")
+
+	// Spawn contexts coroutines
+	var wg sync.WaitGroup
+	for context := 1; context <= contexts; context++ {
+		wg.Add(1)
+		go spcinfo.Context(&wg, iotime, runlen, context)
+	}
+
+	// Used to collect all the stats
+	spcstats := spc.NewSpcStats()
+	prev_spcstats := spcstats.Copy()
+
+	// This goroutine will be used to collect the data
+	// from the io routines and print out to the console
+	// every few seconds
+	var outputwg sync.WaitGroup
+	outputwg.Add(1)
+	go func() {
+		defer outputwg.Done()
+
+		start := time.Now()
+		totaltime := start
+		totalios := uint64(0)
+		print_iops := time.After(time.Second * time.Duration(dataperiod))
+
+		var prev_stats *cache.CacheStats
+		if c != nil {
+			prev_stats = c.Stats()
+		}
+
+		for iostat := range iotime {
+
+			// Save stats
+			spcstats.Collect(iostat)
+
+			// Do this every few seconds
+			select {
+			case <-print_iops:
+				end := time.Now()
+				ios := spcstats.IosDelta(prev_spcstats)
+				totalios += ios
+				iops := float64(ios) / end.Sub(start).Seconds()
+				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms"+
+					"                                   \r",
+					ios, iops, spcstats.LatencyDeltaUsecs(prev_spcstats)/1000)
+
+				// Save stats
+				if c != nil {
+					stats := c.Stats()
+					metrics.WriteString(
+						fmt.Sprintf("%d,"+ // Total time
+							"%v,", // Iops
+							int(end.Sub(totaltime).Seconds()),
+							iops) +
+							spcstats.CsvDelta(prev_spcstats, end.Sub(start)) +
+							stats.CsvDelta(prev_stats) +
+							"\n")
+					prev_stats = stats
+				} else {
+					metrics.WriteString(
+						fmt.Sprintf("%d,"+ // Total time
+							"%v,",
+							int(end.Sub(totaltime).Seconds()),
+							iops) +
+							spcstats.CsvDelta(prev_spcstats, end.Sub(start)) +
+							"\n")
+				}
+
+				// Reset counters
+				start = time.Now()
+				prev_spcstats = spcstats.Copy()
+
+				// Set the timer for the next time
+				print_iops = time.After(time.Second * time.Duration(dataperiod))
+			default:
+			}
+		}
+
+		end := time.Now()
+		iops := float64(totalios) / end.Sub(totaltime).Seconds()
+		fmt.Printf("Avg IOPS:%.2f  Avg Latency:%.4f ms\n",
+			iops, spcstats.LatencyUsecs()/1000)
+
+		fmt.Print("\n")
 	}()
 
+	// Wait here for all the context goroutines to finish
 	wg.Wait()
-	close(mbs)
-	mbswg.Wait()
 
+	// Now we can close the output goroutine
+	close(iotime)
+	outputwg.Wait()
+
+	// Print cache stats
 	if c != nil {
 		c.Close()
 		log.Close()
 		fmt.Print(c)
 		fmt.Print(log)
 	}
+	metrics.Flush()
+
 }

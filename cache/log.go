@@ -147,6 +147,7 @@ func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64
 	}
 	godbc.Check(err == nil)
 
+	// Travis fails on this
 	//err = syscall.Fallocate(int(log.fp.Fd()), 0, 0, int64(blocks*blocksize))
 	//godbc.Check(err == nil)
 
@@ -192,9 +193,11 @@ func (c *Log) logread() {
 		end := time.Now()
 		c.stats.ReadTimeRecord(end.Sub(start))
 
-		godbc.Check(uint64(n) == c.blocksize,
+		godbc.Check(n == len(iopkt.Buffer))
+		/*
 			fmt.Sprintf("Read %v expected %v from location %v index %v",
-				n, c.blocksize, offset, iopkt.BlockNum))
+				n, iopkt.Buffer, offset, iopkt.BlockNum))
+		*/
 		godbc.Check(err == nil)
 		c.stats.StorageHit()
 
@@ -348,8 +351,10 @@ func (c *Log) put(msg *message.Message) error {
 
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
-	godbc.Check(n == len(iopkt.Buffer),
+	godbc.Check(n == len(iopkt.Buffer))
+	/*
 		fmt.Sprintf("n:%v len:%v", n, len(iopkt.Buffer)))
+	*/
 	godbc.Check(err == nil)
 
 	c.segment.written = true
@@ -365,8 +370,8 @@ func (c *Log) get(msg *message.Message) error {
 	var n int
 	var err error
 
+	defer msg.Done()
 	iopkt := msg.IoPkt()
-	offset := c.offset(iopkt.BlockNum)
 
 	/*
 		err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
@@ -377,38 +382,73 @@ func (c *Log) get(msg *message.Message) error {
 		}
 	*/
 
-	// Check if the data is in RAM.  Go through each buffered segment
-	for i := 0; i < c.segmentbuffers; i++ {
+	var readmsg *message.Message
+	orig_nblocks := iopkt.Nblocks
+	for block := 0; block < iopkt.Nblocks; block++ {
+		ramhit := false
+		blocknumber := iopkt.BlockNum + uint64(block)
+		offset := c.offset(blocknumber)
 
-		c.segments[i].lock.RLock()
+		// Check if the data is in RAM.  Go through each buffered segment
+		for i := 0; i < c.segmentbuffers; i++ {
 
-		if c.inRange(iopkt.BlockNum, &c.segments[i]) {
+			c.segments[i].lock.RLock()
+			if c.inRange(blocknumber, &c.segments[i]) {
 
-			n, err = c.segments[i].data.ReadAt(iopkt.Buffer, int64(offset-c.segments[i].offset))
+				ramhit = true
+				n, err = c.segments[i].data.ReadAt(iopkt.Buffer[c.blocksize*uint64(block):uint64(block+1)*c.blocksize],
+					int64(offset-c.segments[i].offset))
 
-			godbc.Check(err == nil)
-			godbc.Check(uint64(n) == c.blocksize,
-				fmt.Sprintf("Read %v expected:%v from location:%v iopkt.BlockNum:%v",
-					n, c.blocksize, offset, iopkt.BlockNum))
-			c.stats.RamHit()
+				godbc.Check(err == nil, err, block, offset, i)
+				godbc.Check(uint64(n) == c.blocksize)
+				/*
+					fmt.Sprintf("Read %v expected:%v from location:%v iopkt.BlockNum:%v",
+						n, c.blocksize, offset, iopkt.BlockNum))
+				*/
+				c.stats.RamHit()
 
+				// Save in buffer cache
+				//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
+
+				// Return message
+				//msg.Done()
+
+				//return nil
+			}
 			c.segments[i].lock.RUnlock()
-
-			// Save in buffer cache
-			//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
-
-			// Return message
-			msg.Done()
-
-			return nil
 		}
 
-		c.segments[i].lock.RUnlock()
+		// We did not find it in ram, let's start making a message
+		if !ramhit {
+			orig_nblocks--
+			if readmsg == nil {
+				readmsg = message.NewMsgGet()
+				msg.Add(readmsg)
+				io := readmsg.IoPkt()
+				io.BlockNum = iopkt.BlockNum + uint64(block)
+				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
+				io.Nblocks = 1
+			} else {
+				io := readmsg.IoPkt()
+				io.Nblocks++
+				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
+			}
+		} else {
+			if readmsg != nil {
+				c.logreaders <- readmsg
+				readmsg = nil
+			}
+		}
 	}
 
-	// We do not have the data yet, so we need to
-	// read it from the storage system
-	c.logreaders <- msg
+	if readmsg != nil {
+		c.logreaders <- readmsg
+	}
+
+	if iopkt.Nblocks != orig_nblocks {
+		msg.Err = ErrPending
+		iopkt.Nblocks = orig_nblocks
+	}
 
 	return nil
 }

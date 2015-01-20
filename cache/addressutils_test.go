@@ -22,13 +22,13 @@ import (
 
 func TestAddressUtils(t *testing.T) {
 	a := Address{
-		devid: uint16(9876),
-		lba:   uint64(123456789),
+		Devid: uint16(9876),
+		Lba:   uint64(123456789),
 	}
 
 	merged := Address64(a)
 	converted := AddressValue(merged)
 
-	tests.Assert(t, a.devid == converted.devid)
-	tests.Assert(t, a.lba == converted.lba)
+	tests.Assert(t, a.Devid == converted.Devid)
+	tests.Assert(t, a.Lba == converted.Lba)
 }

@@ -15,6 +15,10 @@
 //
 package message
 
+import (
+	"fmt"
+)
+
 type IoPkt struct {
 	// Object descriptor
 	Obj uint16
@@ -28,12 +32,17 @@ type IoPkt struct {
 	// Block number on the Log to read
 	// from or write to
 	BlockNum uint64
+
+	// Number of blocks
+	Nblocks int
 }
 
 func newio(msgtype MsgType) *Message {
 	return &Message{
 		Type: msgtype,
-		Pkg:  &IoPkt{},
+		Pkg: &IoPkt{
+			Nblocks: 1,
+		},
 	}
 }
 
@@ -45,10 +54,19 @@ func NewMsgPut() *Message {
 	return newio(MsgPut)
 }
 
-func NewMsgInvalidate() *Message {
-	return newio(MsgInvalidate)
-}
-
 func (m *Message) IoPkt() *IoPkt {
 	return m.Pkg.(*IoPkt)
+}
+
+func (i *IoPkt) String() string {
+	return fmt.Sprintf("IoPkt{"+
+		"Obj:%v "+
+		"Offset:%v "+
+		"BlockNum:%v "+
+		"Nblocks:%v"+
+		"}",
+		i.Obj,
+		i.Offset,
+		i.BlockNum,
+		i.Nblocks)
 }
