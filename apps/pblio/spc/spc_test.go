@@ -114,3 +114,21 @@ func TestSpcAdjustAsuSizes(t *testing.T) {
 	tests.Assert(t, s.asus[ASU3].len == 5)
 
 }
+
+// Returns size in GB
+func TestSpcSize(t *testing.T) {
+
+	// initialize
+	var cache *cache.Cache
+	usedirectio := false
+	blocksize := 4 * KB
+	s := NewSpcInfo(cache, usedirectio, blocksize)
+
+	// Set fake len
+	s.asus[ASU1].len = 40 * GB / (4 * KB)
+
+	// Check size
+	size := s.Size(1)
+	tests.Assert(t, size == 40)
+
+}
