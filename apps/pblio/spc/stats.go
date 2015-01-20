@@ -24,6 +24,7 @@ import (
 
 type IoStats struct {
 	Io      *spc1.Spc1Io
+	Start   time.Time
 	Latency time.Duration
 }
 
@@ -140,6 +141,10 @@ func (s *SpcStats) CsvDelta(prev *SpcStats, delta time.Duration) string {
 
 func (s *SpcStats) LatencyDeltaUsecs(prev *SpcStats) float64 {
 	return s.total.Latency.DeltaMeanTimeUsecs(&prev.total.Latency)
+}
+
+func (s *SpcStats) LatencyUsecs() float64 {
+	return s.total.Latency.MeanTimeUsecs()
 }
 
 func (s *SpcStats) IosDelta(prev *SpcStats) uint64 {

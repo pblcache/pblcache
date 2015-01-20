@@ -197,6 +197,7 @@ func main() {
 
 		start := time.Now()
 		totaltime := start
+		totalios := uint64(0)
 		print_iops := time.After(time.Second * time.Duration(dataperiod))
 
 		var prev_stats *cache.CacheStats
@@ -214,6 +215,7 @@ func main() {
 			case <-print_iops:
 				end := time.Now()
 				ios := spcstats.IosDelta(prev_spcstats)
+				totalios += ios
 				iops := float64(ios) / end.Sub(start).Seconds()
 				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms"+
 					"                                   \r",
@@ -252,10 +254,9 @@ func main() {
 		}
 
 		end := time.Now()
-		ios := spcstats.IosDelta(prev_spcstats)
-		iops := float64(ios) / end.Sub(start).Seconds()
-		fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms\n",
-			ios, iops, spcstats.LatencyDeltaUsecs(prev_spcstats)/1000)
+		iops := float64(totalios) / end.Sub(totaltime).Seconds()
+		fmt.Printf("Avg IOPS:%.2f  Avg Latency:%.4f ms\n",
+			iops, spcstats.LatencyUsecs()/1000)
 
 		fmt.Print("\n")
 	}()

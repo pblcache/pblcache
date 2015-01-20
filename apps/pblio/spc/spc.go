@@ -207,15 +207,15 @@ func read(fp io.ReaderAt,
 }
 
 func (s *SpcInfo) sendio(wg *sync.WaitGroup,
-	iostream <-chan *spc1.Spc1Io,
+	iostream <-chan *IoStats,
 	iotime chan<- *IoStats) {
 	defer wg.Done()
 
 	buffer := make([]byte, 4*KB*64)
-	for io := range iostream {
-		start := time.Now()
+	for iostat := range iostream {
 
 		// Make sure the io is correct
+		io := iostat.Io
 		godbc.Invariant(io)
 		if io.Asu == 3 {
 			s.asus[ASU3].WriteAt(
@@ -253,8 +253,8 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 		}
 
 		// Report back the latency
-		end := time.Now()
-		iotime <- &IoStats{Io: io, Latency: end.Sub(start)}
+		iostat.Latency = time.Now().Sub(iostat.Start)
+		iotime <- iostat
 	}
 }
 
@@ -338,12 +338,12 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 	// 8 io streams.  Spc generator will specify which
 	// io stream to use.
 	streams := 8
-	iostreams := make([]chan *spc1.Spc1Io, streams)
+	iostreams := make([]chan *IoStats, streams)
 
 	var iostreamwg sync.WaitGroup
 	for stream := 0; stream < streams; stream++ {
 		iostreamwg.Add(1)
-		iostreams[stream] = make(chan *spc1.Spc1Io, 32)
+		iostreams[stream] = make(chan *IoStats, 32)
 		go s.sendio(&iostreamwg, iostreams[stream], iotime)
 	}
 
@@ -375,7 +375,10 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 			}
 
 			// Send io to io stream
-			iostreams[s.Stream] <- s
+			iostreams[s.Stream] <- &IoStats{
+				Io:    s,
+				Start: time.Now(),
+			}
 
 			lastiotime = time.Now()
 
