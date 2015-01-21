@@ -106,6 +106,7 @@ func (a *Asu) Open(filename string) error {
 }
 
 func (a *Asu) ReadAt(b []byte, offset int64) (n int, err error) {
+	godbc.Require(a.fpsize != 0)
 
 	fp := int(offset / a.fpsize)
 	fp_off := int64(offset % a.fpsize)
@@ -115,6 +116,8 @@ func (a *Asu) ReadAt(b []byte, offset int64) (n int, err error) {
 }
 
 func (a *Asu) WriteAt(b []byte, offset int64) (n int, err error) {
+	godbc.Require(a.fpsize != 0)
+
 	fp := int(offset / a.fpsize)
 	fp_off := int64(offset % a.fpsize)
 	godbc.Check(fp < len(a.fps), fp, len(a.fps))

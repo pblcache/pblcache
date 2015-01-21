@@ -23,52 +23,6 @@ import (
 	"testing"
 )
 
-type MockFile struct {
-	called      bool
-	calls       int
-	mockclose   func() error
-	mockseek    func(offset int64, whence int) (int64, error)
-	mockreadat  func(p []byte, off int64) (n int, err error)
-	mockwriteat func(p []byte, off int64) (n int, err error)
-}
-
-func NewMockFile() *MockFile {
-	m := &MockFile{}
-	m.mockclose = func() error { return nil }
-
-	m.mockseek = func(offset int64, whence int) (int64, error) {
-		return 0, nil
-	}
-
-	m.mockreadat = func(p []byte, off int64) (n int, err error) {
-		return len(p), nil
-	}
-
-	m.mockwriteat = func(p []byte, off int64) (n int, err error) {
-		return len(p), nil
-	}
-
-	return m
-}
-
-func (m *MockFile) Close() error {
-	return m.mockclose()
-}
-
-func (m *MockFile) Seek(offset int64, whence int) (int64, error) {
-	return m.mockseek(offset, whence)
-
-}
-
-func (m *MockFile) WriteAt(p []byte, off int64) (n int, err error) {
-	return m.mockwriteat(p, off)
-
-}
-
-func (m *MockFile) ReadAt(p []byte, off int64) (n int, err error) {
-	return m.mockreadat(p, off)
-}
-
 func TestAsuNew(t *testing.T) {
 	usedirectio := false
 	asu := NewAsu(usedirectio)
@@ -96,19 +50,21 @@ func TestAsuSize(t *testing.T) {
 func TestAsuOpenFile(t *testing.T) {
 	usedirectio := true
 	asu := NewAsu(usedirectio)
-	mockfile := NewMockFile()
+	mockfile := tests.NewMockFile()
 	mockerror := errors.New("Test Error")
 
 	directio_set := false
 
-	openFile = func(name string, flag int, perm os.FileMode) (Filer, error) {
-		directio_set = false
-		if (flag & syscall.O_DIRECT) == syscall.O_DIRECT {
-			directio_set = true
-		}
+	// Mock openFile
+	defer tests.Patch(&openFile,
+		func(name string, flag int, perm os.FileMode) (Filer, error) {
+			directio_set = false
+			if (flag & syscall.O_DIRECT) == syscall.O_DIRECT {
+				directio_set = true
+			}
 
-		return mockfile, mockerror
-	}
+			return mockfile, mockerror
+		}).Restore()
 
 	// Call
 	err := asu.Open("filename")
@@ -130,18 +86,20 @@ func TestAsuOpenFile(t *testing.T) {
 func TestAsuOpenSeek(t *testing.T) {
 	usedirectio := true
 	asu := NewAsu(usedirectio)
-	mockfile := NewMockFile()
+	mockfile := tests.NewMockFile()
 
 	seeklen := int64(0)
 	mockerror := errors.New("Test Error")
 	seekerror := error(nil)
-	mockfile.mockseek = func(offset int64, whence int) (int64, error) {
+	mockfile.MockSeek = func(offset int64, whence int) (int64, error) {
 		return seeklen, seekerror
 	}
 
-	openFile = func(name string, flag int, perm os.FileMode) (Filer, error) {
-		return mockfile, nil
-	}
+	// Mock openFile
+	defer tests.Patch(&openFile,
+		func(name string, flag int, perm os.FileMode) (Filer, error) {
+			return mockfile, nil
+		}).Restore()
 
 	// Seek will return len of 0
 	err := asu.Open("filename")
