@@ -15,8 +15,9 @@
 //
 package message
 
-/*
 import (
+	"github.com/pblcache/pblcache/tests"
+	"strings"
 	"testing"
 )
 
@@ -25,12 +26,23 @@ func TestGetIoPkt(t *testing.T) {
 	m := NewMsgGet()
 	m.RetChan = c
 	iopkt := m.IoPkt()
-	assert(t, iopkt.BlockNum == 0)
-	assert(t, iopkt.Buffer == nil)
-	assert(t, iopkt.Offset == 0)
-	assert(t, iopkt.Obj == 0)
-	assert(t, m.RetChan == c)
-	assert(t, m.Type == MsgGet)
+	tests.Assert(t, iopkt.BlockNum == 0)
+	tests.Assert(t, iopkt.Buffer == nil)
+	tests.Assert(t, iopkt.Offset == 0)
+	tests.Assert(t, iopkt.Obj == 0)
+	tests.Assert(t, m.RetChan == c)
+	tests.Assert(t, m.Type == MsgGet)
+}
+
+func TestIoPktString(t *testing.T) {
+	m := NewMsgGet()
+	iopkt := m.IoPkt()
+	s := iopkt.String()
+
+	tests.Assert(t, strings.Contains(s, "Offset"))
+	tests.Assert(t, strings.Contains(s, "BlockNum"))
+	tests.Assert(t, strings.Contains(s, "Nblocks"))
+
 }
 
 func TestPutIoPkt(t *testing.T) {
@@ -38,25 +50,25 @@ func TestPutIoPkt(t *testing.T) {
 	m := NewMsgPut()
 	m.RetChan = c
 	iopkt := m.IoPkt()
-	assert(t, iopkt.BlockNum == 0)
-	assert(t, iopkt.Buffer == nil)
-	assert(t, iopkt.Offset == 0)
-	assert(t, iopkt.Obj == 0)
-	assert(t, m.RetChan == c)
-	assert(t, m.Type == MsgPut)
+	tests.Assert(t, iopkt.BlockNum == 0)
+	tests.Assert(t, iopkt.Buffer == nil)
+	tests.Assert(t, iopkt.Offset == 0)
+	tests.Assert(t, iopkt.Obj == 0)
+	tests.Assert(t, m.RetChan == c)
+	tests.Assert(t, m.Type == MsgPut)
 }
 
 func TestInvalidateIoPkt(t *testing.T) {
 	c := make(chan *Message)
-	m := NewMsgInvalidate()
+	m := NewMsgGet()
 	m.RetChan = c
 	iopkt := m.IoPkt()
-	assert(t, iopkt.BlockNum == 0)
-	assert(t, iopkt.Buffer == nil)
-	assert(t, iopkt.Offset == 0)
-	assert(t, iopkt.Obj == 0)
-	assert(t, m.RetChan == c)
-	assert(t, m.Type == MsgInvalidate)
+	tests.Assert(t, iopkt.BlockNum == 0)
+	tests.Assert(t, iopkt.Buffer == nil)
+	tests.Assert(t, iopkt.Offset == 0)
+	tests.Assert(t, iopkt.Obj == 0)
+	tests.Assert(t, m.RetChan == c)
+	tests.Assert(t, m.Type == MsgGet)
 }
 
 func TestMsgIoDone(t *testing.T) {
@@ -80,8 +92,8 @@ func TestMsgIoDone(t *testing.T) {
 		d := msg.Priv.(*Data)
 		io := msg.IoPkt()
 		io.Buffer = []byte("TESTSTRING")
-		assert(t, msg.Type == MsgPut)
-		assert(t, d.i == 1)
+		tests.Assert(t, msg.Type == MsgPut)
+		tests.Assert(t, d.i == 1)
 
 		// Increment the offset here to test
 		d.i += 1
@@ -102,8 +114,6 @@ func TestMsgIoDone(t *testing.T) {
 	io := rm.IoPkt()
 
 	// Check results
-	assert(t, newD.i == 2)
-	assert(t, string(io.Buffer) == "TESTSTRING")
+	tests.Assert(t, newD.i == 2)
+	tests.Assert(t, string(io.Buffer) == "TESTSTRING")
 }
-
-*/

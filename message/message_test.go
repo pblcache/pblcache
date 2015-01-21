@@ -15,15 +15,15 @@
 //
 package message
 
-/* -- Needs update
-
 import (
 	"github.com/lpabon/tm"
-	"runtime"
+	"github.com/pblcache/pblcache/tests"
+	"strings"
 	"testing"
+	"time"
 )
 
-func TestTime(t *testing.T) {
+func TestMessageTime(t *testing.T) {
 	var td tm.TimeDuration
 	m := &Message{}
 	for i := 0; i < 100; i++ {
@@ -32,7 +32,115 @@ func TestTime(t *testing.T) {
 		}
 		td.Add(m.TimeElapsed())
 	}
-	assert(t, td.MeanTimeUsecs() > 0)
+	tests.Assert(t, td.MeanTimeUsecs() > 0)
+}
+
+func TestMessageString(t *testing.T) {
+	m := &Message{}
+	s := m.String()
+
+	tests.Assert(t, strings.Contains(s, "Type"))
+	tests.Assert(t, strings.Contains(s, "Pkg"))
+	tests.Assert(t, strings.Contains(s, "Priv"))
+	tests.Assert(t, strings.Contains(s, "parent"))
+}
+
+func TestMessageAdd(t *testing.T) {
+	grandpa := &Message{}
+	father := &Message{}
+	son := &Message{}
+	daughter := &Message{}
+
+	done := make(chan *Message)
+	grandpa.RetChan = done
+
+	father.Add(son)
+	father.Add(daughter)
+
+	grandpa.Add(father)
+
+	tests.Assert(t, father.parent == grandpa)
+	tests.Assert(t, son.parent == father)
+	tests.Assert(t, daughter.parent == father)
+
+	// --- This should return before timeout
+	go func() {
+		time.Sleep(time.Millisecond * 5)
+		son.Done()
+	}()
+
+	go func() {
+		time.Sleep(time.Millisecond * 100)
+		daughter.Done()
+	}()
+
+	go func() {
+		time.Sleep(time.Millisecond * 50)
+		father.Done()
+	}()
+
+	// Wait here until all children are done
+	go func() {
+		grandpa.Done()
+	}()
+
+	timeout := time.After(time.Second * 2)
+	select {
+	case <-timeout:
+		t.Error("Waiting for children failed")
+	case <-done:
+	}
+
+}
+
+func TestMessageAddTestError(t *testing.T) {
+	grandpa := &Message{}
+	father := &Message{}
+	son := &Message{}
+	daughter := &Message{}
+
+	done := make(chan *Message)
+	grandpa.RetChan = done
+
+	father.Add(son)
+	father.Add(daughter)
+
+	grandpa.Add(father)
+
+	tests.Assert(t, father.parent == grandpa)
+	tests.Assert(t, son.parent == father)
+	tests.Assert(t, daughter.parent == father)
+
+	// --- This should timeout since son is waiting for
+	//     5 seconds
+	go func() {
+		time.Sleep(time.Second * 5)
+		son.Done()
+	}()
+
+	go func() {
+		time.Sleep(time.Millisecond * 500)
+		daughter.Done()
+	}()
+
+	go func() {
+		time.Sleep(time.Millisecond * 500)
+		father.Done()
+	}()
+
+	// Wait here until all children are done
+	go func() {
+		grandpa.Done()
+	}()
+
+	timeout := time.After(time.Second * 1)
+	select {
+	case <-timeout:
+
+	case <-done:
+		t.Error("Children came back too fast!")
+	}
+
 }
 
 type Data struct {
@@ -57,10 +165,10 @@ func TestMessagePriv(t *testing.T) {
 	// Save a *data in interface
 	m.Priv = d
 	newD := m.Priv.(*Data)
-	assert(t, newD.i == d.i)
-	assert(t, newD.f == d.f)
-	assert(t, newD.i64 == d.i64)
-	assert(t, newD.s == d.s)
+	tests.Assert(t, newD.i == d.i)
+	tests.Assert(t, newD.f == d.f)
+	tests.Assert(t, newD.i64 == d.i64)
+	tests.Assert(t, newD.s == d.s)
 }
 
 func TestMessageDone(t *testing.T) {
@@ -85,8 +193,8 @@ func TestMessageDone(t *testing.T) {
 		// Wait for work
 		msg := <-worker
 		d := msg.Priv.(*Data)
-		assert(t, msg.Type == MsgShutdown)
-		assert(t, d.i == 1)
+		tests.Assert(t, msg.Type == MsgShutdown)
+		tests.Assert(t, d.i == 1)
 
 		// Increment the offset here to test
 		d.i += 1
@@ -106,11 +214,9 @@ func TestMessageDone(t *testing.T) {
 	newD := m.Priv.(*Data)
 
 	// Check results
-	assert(t, newD.i == 2)
+	tests.Assert(t, newD.i == 2)
 
 	// Cleanup
 	close(worker)
 	close(backhere)
 }
-
-*/
