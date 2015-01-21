@@ -18,8 +18,16 @@ package spc
 import (
 	"fmt"
 	"github.com/lpabon/godbc"
+	"io"
 	"os"
 	"syscall"
+)
+
+// Allows these functions to be mocked by tests
+var (
+	openFile = func(name string, flag int, perm os.FileMode) (Filer, error) {
+		return os.OpenFile(name, flag, perm)
+	}
 )
 
 const (
@@ -28,8 +36,15 @@ const (
 	GB = 1024 * MB
 )
 
+type Filer interface {
+	io.Closer
+	io.Seeker
+	io.ReaderAt
+	io.WriterAt
+}
+
 type Asu struct {
-	fps         []*os.File
+	fps         []Filer
 	len         uint32
 	usedirectio bool
 	fpsize      int64
@@ -38,7 +53,7 @@ type Asu struct {
 func NewAsu(usedirectio bool) *Asu {
 	return &Asu{
 		usedirectio: usedirectio,
-		fps:         make([]*os.File, 0),
+		fps:         make([]Filer, 0),
 	}
 }
 
@@ -58,7 +73,8 @@ func (a *Asu) Open(filename string) error {
 	}
 
 	// Open the file
-	fp, err := os.OpenFile(filename, flags, os.ModePerm)
+	//fp, err := os.OpenFile(filename, flags, os.ModePerm)
+	fp, err := openFile(filename, flags, os.ModePerm)
 	if err != nil {
 		return err
 	}
