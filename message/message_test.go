@@ -187,6 +187,10 @@ func TestMessageDone(t *testing.T) {
 		Priv: &Data{i: 1},
 	}
 
+	// Check message is clear
+	err := m.Check()
+	tests.Assert(t, err == nil)
+
 	// Start 'work' service
 	go func() {
 
@@ -212,6 +216,10 @@ func TestMessageDone(t *testing.T) {
 
 	// Get the priv data
 	newD := m.Priv.(*Data)
+
+	// Check message is used
+	err = m.Check()
+	tests.Assert(t, err == ErrMessageUsed)
 
 	// Check results
 	tests.Assert(t, newD.i == 2)

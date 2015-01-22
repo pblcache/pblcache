@@ -67,11 +67,15 @@ func TestInvalidateMultipleBlocks(t *testing.T) {
 }
 
 func TestCacheSimple(t *testing.T) {
-	nc := message.NewNullTerminator()
-	nc.Start()
-	defer nc.Close()
+	mocklog := make(chan *message.Message)
 
-	c := NewCache(8, 4096, nc.In)
+	// This service will run in its own goroutine
+	// and send to mocklog any messages
+	pipeline := message.NewNullPipeline(mocklog)
+	pipeline.Start()
+	defer pipeline.Close()
+
+	c := NewCache(8, 4096, pipeline.In)
 	tests.Assert(t, c != nil)
 
 	here := make(chan *message.Message)
@@ -86,26 +90,51 @@ func TestCacheSimple(t *testing.T) {
 	// First Put
 	err := c.Put(m)
 	tests.Assert(t, err == nil)
+
+	logmsg := <-mocklog
+	logio := logmsg.IoPkt()
+	tests.Assert(t, m.Type == logmsg.Type)
+	tests.Assert(t, logmsg.Priv.(*Cache) == c)
+	tests.Assert(t, io.Nblocks == logio.Nblocks)
+	tests.Assert(t, io.Offset == logio.Offset)
+	tests.Assert(t, logio.BlockNum == 0)
+	logmsg.Done()
+
 	returnedmsg := <-here
 	rio := returnedmsg.IoPkt()
 	tests.Assert(t, m.Type == returnedmsg.Type)
 	tests.Assert(t, returnedmsg.Priv.(*Cache) == c)
 	tests.Assert(t, io.Nblocks == rio.Nblocks)
 	tests.Assert(t, io.Offset == rio.Offset)
-	tests.Assert(t, rio.BlockNum == 0)
 	tests.Assert(t, c.stats.insertions == 1)
+	tests.Assert(t, returnedmsg.Err == nil)
 
 	val, ok := c.addressmap[io.Offset]
 	tests.Assert(t, val == 0)
 	tests.Assert(t, ok == true)
 
+	// Check that we cannot resend this message
+	err = c.Put(m)
+	tests.Assert(t, err == message.ErrMessageUsed)
+
 	// Insert again.  Should allocate
 	// next block
+	m = message.NewMsgPut()
+	m.RetChan = here
+	io = m.IoPkt()
+	io.Buffer = buffer
+	io.Offset = 1
+	m.Priv = c
 	err = c.Put(m)
 	tests.Assert(t, err == nil)
+
+	logmsg = <-mocklog
+	logio = logmsg.IoPkt()
+	tests.Assert(t, logio.BlockNum == 1)
+	logmsg.Done()
+
 	returnedmsg = <-here
 	rio = returnedmsg.IoPkt()
-	tests.Assert(t, rio.BlockNum == 1)
 	tests.Assert(t, returnedmsg.Err == nil)
 	tests.Assert(t, c.stats.insertions == 2)
 
@@ -119,19 +148,29 @@ func TestCacheSimple(t *testing.T) {
 	io.Offset = 1
 	io.Buffer = buffer
 	mg.RetChan = here
-	hitmap, err := c.Get(mg)
 
-	returnedmsg = <-here
-	io = returnedmsg.IoPkt()
+	hitmap, err := c.Get(mg)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, hitmap.Hits == 1)
 	tests.Assert(t, hitmap.Hitmap[0] == true)
 	tests.Assert(t, hitmap.Hits == io.Nblocks)
-	tests.Assert(t, io.BlockNum == 1)
+
+	logmsg = <-mocklog
+	logio = logmsg.IoPkt()
+	tests.Assert(t, logio.BlockNum == 1)
+	logmsg.Done()
+
+	returnedmsg = <-here
+	io = returnedmsg.IoPkt()
 	tests.Assert(t, returnedmsg.Err == nil)
 	tests.Assert(t, c.stats.insertions == 2)
 	tests.Assert(t, c.stats.readhits == 1)
 	tests.Assert(t, c.stats.reads == 1)
+
+	// Test we cannot send the same message
+	hitmap, err = c.Get(mg)
+	tests.Assert(t, err == message.ErrMessageUsed)
+	tests.Assert(t, hitmap == nil)
 
 	// Send Invalidate
 	iopkt := &message.IoPkt{}

@@ -106,6 +106,12 @@ func TestSimpleCache(t *testing.T) {
 	wgRet.Add(1)
 	go response_handler(t, &wgRet, returnch)
 
+	// Create a parent message for all messages to notify
+	// when they have been completed.
+	messages := &message.Message{}
+	messages_done := make(chan *message.Message)
+	messages.RetChan = messages_done
+
 	// Create 100 clients
 	for i := 0; i < 100; i++ {
 		wgIo.Add(1)
@@ -139,6 +145,7 @@ func TestSimpleCache(t *testing.T) {
 					msg = message.NewMsgPut()
 				}
 
+				messages.Add(msg)
 				iopkt := msg.IoPkt()
 				iopkt.Buffer = make([]byte, blocksize)
 				iopkt.Offset = offset
@@ -156,7 +163,7 @@ func TestSimpleCache(t *testing.T) {
 					_, err := c.Get(msg)
 					if err != nil {
 						msg.Err = err
-						returnch <- msg
+						msg.Done()
 					}
 				}
 
@@ -174,6 +181,10 @@ func TestSimpleCache(t *testing.T) {
 
 	// Wait for all clients to finish
 	wgIo.Wait()
+
+	// Wait for all messages to finish
+	messages.Done()
+	<-messages_done
 
 	// Print stats
 	fmt.Print(c)

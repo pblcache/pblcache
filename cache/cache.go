@@ -81,13 +81,20 @@ func (c *Cache) Invalidate(io *message.IoPkt) error {
 
 func (c *Cache) Put(msg *message.Message) error {
 
+	err := msg.Check()
+	if err != nil {
+		return err
+	}
+
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	defer msg.Done()
 
 	io := msg.IoPkt()
 
 	if io.Nblocks > 1 {
+		// Have parent message wait for its children
+		defer msg.Done()
+
 		//
 		// It does not matter that we send small blocks to the Log, since
 		// it will buffer them before sending them out to the cache device
@@ -117,6 +124,11 @@ func (c *Cache) Put(msg *message.Message) error {
 }
 
 func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
+
+	err := msg.Check()
+	if err != nil {
+		return nil, err
+	}
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
