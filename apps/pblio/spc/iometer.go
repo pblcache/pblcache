@@ -22,26 +22,38 @@ import (
 )
 
 type IoMeter struct {
-	Latency tm.TimeDuration
-	Ios     uint64
+	latency tm.TimeDuration
+	ios     uint64
 
 	// 4KB Blocks transferred
-	Blocks uint64
+	blocks uint64
 }
 
 func (i *IoMeter) Collect(iostat *IoStats) {
-	i.Ios++
-	i.Blocks += uint64(iostat.Io.Blocks)
-	i.Latency.Add(iostat.Latency)
+	i.ios++
+	i.blocks += uint64(iostat.Io.Blocks)
+	i.latency.Add(iostat.Latency)
 }
 
 func (i *IoMeter) CsvDelta(prev *IoMeter, delta time.Duration) string {
-	return fmt.Sprintf("%v,"+ // Ios
+	return fmt.Sprintf("%v,"+ // ios
 		"%v,"+ // Bytes Transferred
 		"%v,"+ // MB/s
-		"%v,", // Latency in usecs
-		i.Ios-prev.Ios,
-		(i.Blocks-prev.Blocks)*4*KB,
-		(float64((i.Blocks-prev.Blocks)*4*KB)/float64(MB))/delta.Seconds(),
-		i.Latency.DeltaMeanTimeUsecs(&prev.Latency))
+		"%v,", // latency in usecs
+		i.ios-prev.ios,
+		(i.blocks-prev.blocks)*4*KB,
+		(float64((i.blocks-prev.blocks)*4*KB)/float64(MB))/delta.Seconds(),
+		i.latency.DeltaMeanTimeUsecs(&prev.latency))
+}
+
+func (i *IoMeter) LatencyDeltaUsecs(prev *IoMeter) float64 {
+	return i.latency.DeltaMeanTimeUsecs(&prev.latency)
+}
+
+func (i *IoMeter) LatencyUsecs() float64 {
+	return i.latency.MeanTimeUsecs()
+}
+
+func (i *IoMeter) IosDelta(prev *IoMeter) uint64 {
+	return i.ios - prev.ios
 }

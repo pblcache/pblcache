@@ -77,13 +77,13 @@ func (s *SpcStats) CsvDelta(prev *SpcStats, delta time.Duration) string {
 }
 
 func (s *SpcStats) LatencyDeltaUsecs(prev *SpcStats) float64 {
-	return s.total.Latency.DeltaMeanTimeUsecs(&prev.total.Latency)
+	return s.total.LatencyDeltaUsecs(&prev.total)
 }
 
 func (s *SpcStats) LatencyUsecs() float64 {
-	return s.total.Latency.MeanTimeUsecs()
+	return s.total.LatencyUsecs()
 }
 
 func (s *SpcStats) IosDelta(prev *SpcStats) uint64 {
-	return s.total.Ios - prev.total.Ios
+	return s.total.IosDelta(&prev.total)
 }
