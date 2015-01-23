@@ -110,7 +110,7 @@ func TestIoMeterDeltas(t *testing.T) {
 	meter.latency.Add(time.Millisecond * 2)
 
 	// Test Accessors
-	tests.Assert(t, meter.LatencyDeltaUsecs(prev) == 2000.0)
+	tests.Assert(t, meter.MeanLatencyDeltaUsecs(prev) == 2000.0)
 	tests.Assert(t, meter.IosDelta(prev) == 500)
-	tests.Assert(t, meter.LatencyUsecs() == 1500.0)
+	tests.Assert(t, meter.MeanLatencyUsecs() == 1500.0)
 }

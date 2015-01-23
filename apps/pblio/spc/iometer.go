@@ -46,11 +46,11 @@ func (i *IoMeter) CsvDelta(prev *IoMeter, delta time.Duration) string {
 		i.latency.DeltaMeanTimeUsecs(&prev.latency))
 }
 
-func (i *IoMeter) LatencyDeltaUsecs(prev *IoMeter) float64 {
+func (i *IoMeter) MeanLatencyDeltaUsecs(prev *IoMeter) float64 {
 	return i.latency.DeltaMeanTimeUsecs(&prev.latency)
 }
 
-func (i *IoMeter) LatencyUsecs() float64 {
+func (i *IoMeter) MeanLatencyUsecs() float64 {
 	return i.latency.MeanTimeUsecs()
 }
 
