@@ -219,7 +219,7 @@ func main() {
 				iops := float64(ios) / end.Sub(start).Seconds()
 				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms"+
 					"                                   \r",
-					ios, iops, spcstats.LatencyDeltaUsecs(prev_spcstats)/1000)
+					ios, iops, spcstats.MeanLatencyDeltaUsecs(prev_spcstats)/1000)
 
 				// Save stats
 				if c != nil {
@@ -256,7 +256,7 @@ func main() {
 		end := time.Now()
 		iops := float64(totalios) / end.Sub(totaltime).Seconds()
 		fmt.Printf("Avg IOPS:%.2f  Avg Latency:%.4f ms\n",
-			iops, spcstats.LatencyUsecs()/1000)
+			iops, spcstats.MeanLatencyUsecs()/1000)
 
 		fmt.Print("\n")
 	}()
