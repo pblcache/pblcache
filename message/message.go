@@ -90,7 +90,6 @@ func (m *Message) String() string {
 
 // Notify that the message is complete.
 // Once a message is done, it cannot be used again.
-// Use Copy() if you want to resend the same message
 func (m *Message) Done() {
 	godbc.Require(atomic.AddUint32(&m.done, 1) == 1)
 
