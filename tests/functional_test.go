@@ -15,7 +15,6 @@
 //
 package tests
 
-/* -- Needs to be redone
 import (
 	"fmt"
 	"github.com/lpabon/bufferio"
@@ -32,83 +31,55 @@ import (
 
 func response_handler(t *testing.T,
 	wg *sync.WaitGroup,
-	quit chan struct{},
 	m chan *message.Message) {
 
 	var (
-		gethits, getmisses, puts         int
-		invalidatehits, invalidatemisses int
-		errors                           int
-		tgh, tgm, tp, tih, tim           tm.TimeDuration
+		gethits, getmisses, puts int
+		errors                   int
+		tgh, tgm, tp             tm.TimeDuration
 	)
 
 	defer wg.Done()
 
-	emptychan := false
-	for {
+	// Check incoming channels
+	for msg := range m {
+		// Collect stats
+		switch msg.Type {
+		case message.MsgGet:
+			if msg.Err == nil {
+				tgh.Add(msg.TimeElapsed())
+				gethits++
 
-		// Check if we have been signaled through <-quit
-		// If we have, we now know that as soon as the
-		// message channel is empty, we can quit.
-		if emptychan {
-			if len(m) == 0 {
-				break
-			}
-		}
+				// Check correctness.  The value
+				// of the offset should have been
+				// saved in the buffer
+				iopkt := msg.IoPkt()
+				bio := bufferio.NewBufferIO(iopkt.Buffer)
+				var offset_in_buffer uint64
+				bio.ReadDataLE(&offset_in_buffer)
 
-		// Check incoming channels
-		select {
-		case msg := <-m:
-			// Collect stats
-			switch msg.Type {
-			case message.MsgGet:
-				if msg.Err == nil {
-					tgh.Add(msg.TimeElapsed())
-					gethits++
-
-					// Check correctness.  The value
-					// of the offset should have been
-					// saved in the buffer
-					iopkt := msg.IoPkt()
-					bio := bufferio.NewBufferIO(iopkt.Buffer)
-					var offset_in_buffer uint64
-					bio.ReadDataLE(&offset_in_buffer)
-
-					if offset_in_buffer != iopkt.Offset {
-						errors++
-					}
-
-				} else {
-					tgm.Add(msg.TimeElapsed())
-					getmisses++
+				if offset_in_buffer != iopkt.Offset {
+					errors++
 				}
-			case message.MsgInvalidate:
-				if msg.Err == nil {
-					invalidatehits++
-					tih.Add(msg.TimeElapsed())
-				} else {
-					invalidatemisses++
-					tim.Add(msg.TimeElapsed())
-				}
-			case message.MsgPut:
-				puts++
-				tp.Add(msg.TimeElapsed())
-			}
 
-		case <-quit:
-			emptychan = true
+			} else {
+				tgm.Add(msg.TimeElapsed())
+				getmisses++
+			}
+		case message.MsgPut:
+			puts++
+			tp.Add(msg.TimeElapsed())
 		}
 	}
-	fmt.Printf("ERRORS: %d\nGet H:%d M:%d, Puts:%d, Invalidates H:%d M:%d\n"+
-		"Get Hit Rate: %.2f Invalidate Hit Rate: %.2f\n"+
+
+	fmt.Printf("ERRORS: %d\nGet H:%d M:%d, Puts:%d\n"+
+		"Get Hit Rate: %.2f\n"+
 		"Mean times in usecs:\n"+
-		"Get H:%.2f M:%.2f, Puts:%.2f, Inv H:%.2f M:%.2f\n",
-		errors, gethits, getmisses, puts, invalidatehits, invalidatemisses,
+		"Get H:%.2f M:%.2f, Puts:%.2f\n",
+		errors, gethits, getmisses, puts,
 		float64(gethits)/float64(gethits+getmisses),
-		float64(invalidatehits)/float64(invalidatehits+invalidatemisses),
 		tgh.MeanTimeUsecs(), tgm.MeanTimeUsecs(),
-		tp.MeanTimeUsecs(),
-		tih.MeanTimeUsecs(), tim.MeanTimeUsecs())
+		tp.MeanTimeUsecs())
 	Assert(t, errors == 0)
 }
 
@@ -125,24 +96,29 @@ func TestSimpleCache(t *testing.T) {
 		blocksize,
 		blocks_per_segment,
 		bcsize)
-	cache := cache.NewCache(actual_blocks, log.Msgchan)
+	c := cache.NewCache(actual_blocks, blocksize, log.Msgchan)
+	defer os.Remove(logfile)
 
 	var wgIo, wgRet sync.WaitGroup
 
 	// Start up response server
 	returnch := make(chan *message.Message, 100)
-	quit := make(chan struct{})
 	wgRet.Add(1)
-	go response_handler(t, &wgRet, quit, returnch)
+	go response_handler(t, &wgRet, returnch)
+
+	// Create a parent message for all messages to notify
+	// when they have been completed.
+	messages := &message.Message{}
+	messages_done := make(chan *message.Message)
+	messages.RetChan = messages_done
 
 	// Create 100 clients
 	for i := 0; i < 100; i++ {
 		wgIo.Add(1)
 		go func() {
 			defer wgIo.Done()
-			z := zipf.NewZipfWorkload(actual_blocks*10, 60) //
+			z := zipf.NewZipfWorkload(actual_blocks*10, 60)
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			here := make(chan *message.Message, 1)
 
 			// Each client to send 5k IOs
 			for io := 0; io < 5000; io++ {
@@ -155,17 +131,11 @@ func TestSimpleCache(t *testing.T) {
 					// On a write the client would first
 					// invalidate the block, write the data to the
 					// storage device, then place it in the cache
-					msg = message.NewMsgInvalidate()
-					iopkt := msg.IoPkt()
-					iopkt.Offset = offset
-					msg.RetChan = here
-					msg.TimeStart()
-					cache.Msgchan <- msg
-					<-here
-
-					// Send it to returnch so that it can track
-					// the stats
-					returnch <- msg
+					iopkt := &message.IoPkt{
+						Offset:  offset,
+						Nblocks: 1,
+					}
+					c.Invalidate(iopkt)
 
 					// Simulate waiting for storage device to write data
 					// anywhere from 100usecs to 10ms
@@ -175,23 +145,31 @@ func TestSimpleCache(t *testing.T) {
 					msg = message.NewMsgPut()
 				}
 
+				messages.Add(msg)
 				iopkt := msg.IoPkt()
 				iopkt.Buffer = make([]byte, blocksize)
+				iopkt.Offset = offset
+				msg.RetChan = returnch
+
+				msg.TimeStart()
 
 				// Write the offset into the buffer so that we can
 				// check it on reads.
 				if !isread {
 					bio := bufferio.NewBufferIO(iopkt.Buffer)
 					bio.WriteDataLE(offset)
+					c.Put(msg)
+				} else {
+					_, err := c.Get(msg)
+					if err != nil {
+						msg.Err = err
+						msg.Done()
+					}
 				}
 
 				// Maximum "disk" size is 10 times bigger than cache
-				iopkt.Offset = offset
-				msg.RetChan = returnch
 
 				// Send request
-				msg.TimeStart()
-				cache.Msgchan <- msg
 
 				// Simulate waiting for more work by sleeping
 				// anywhere from 100usecs to 10ms
@@ -204,22 +182,22 @@ func TestSimpleCache(t *testing.T) {
 	// Wait for all clients to finish
 	wgIo.Wait()
 
+	// Wait for all messages to finish
+	messages.Done()
+	<-messages_done
+
 	// Print stats
-	fmt.Print(cache)
+	fmt.Print(c)
 	fmt.Print(log)
 
 	// Close cache and log
-	cache.Close()
+	c.Close()
 	log.Close()
 
 	// Send receiver a message that all clients have shut down
-	close(quit)
+	close(returnch)
 
 	// Wait for receiver to finish emptying its channel
 	wgRet.Wait()
 
-	// Cleanup
-	os.Remove(logfile)
 }
-
-*/

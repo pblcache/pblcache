@@ -16,13 +16,19 @@
 package message
 
 import (
+	"errors"
 	"fmt"
 	"github.com/lpabon/godbc"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type MsgType int
+
+var (
+	ErrMessageUsed = errors.New("Message has been used already")
+)
 
 const (
 	MsgStart MsgType = iota + 1
@@ -49,6 +55,7 @@ type Message struct {
 	Stats   MessageStats
 	parent  *Message
 	wg      sync.WaitGroup
+	done    uint32
 }
 
 func (m *Message) TimeStart() {
@@ -81,15 +88,37 @@ func (m *Message) String() string {
 		m.parent)
 }
 
+// Notify that the message is complete.
+// Once a message is done, it cannot be used again.
+// Use Copy() if you want to resend the same message
 func (m *Message) Done() {
+	godbc.Require(atomic.AddUint32(&m.done, 1) == 1)
+
+	// Create this in a goroutine so that
+	// caller does not wait for children
 	go func() {
+
+		// Wait for children messages
 		m.wg.Wait()
+
+		// Send to channel if set
+		if m.RetChan != nil {
+			m.RetChan <- m
+		}
+
+		// We are finished. Notify parent
+		// we are done
 		if m.parent != nil {
 			m.parent.wg.Done()
 			m.parent = nil
 		}
-		if m.RetChan != nil {
-			m.RetChan <- m
-		}
 	}()
+}
+
+func (m *Message) Check() error {
+	if atomic.LoadUint32(&m.done) > 0 {
+		return ErrMessageUsed
+	}
+
+	return nil
 }

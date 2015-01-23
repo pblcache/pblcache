@@ -30,11 +30,13 @@ coverage()
 
 coverage
 
-# Send to coveralls.io
-$HOME/gopath/bin/goveralls \
-    -coverprofile=$COVERFILE \
-    -service=travis-ci \
-    -repotoken $COVERALLS_TOKEN
+if [ -n "$COVERALLS_TOKEN" ] ; then
+    # Send to coveralls.io
+    $HOME/gopath/bin/goveralls \
+        -coverprofile=$COVERFILE \
+        -service=travis-ci \
+        -repotoken $COVERALLS_TOKEN
+fi
 
 # Clean up
 rm -f $COVERFILE > /dev/null 2>&1
