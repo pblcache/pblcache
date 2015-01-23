@@ -2,7 +2,7 @@ language: go
 install:
 - go get github.com/mattn/goveralls
 - go get github.com/lpabon/tm
-- go get -v ./...
+- go get -v -d ./...
 env:
   global:
   - secure: XbgkCwQcPJzpkaVR9HJPyKezpEDrZQEHwhYueiWgsC7YKJIqROfHQ/EPZNQpXCW/v24Sp4RQeQf4RMcnnj5Dy7XBzbkBmMIjZs/Tvp8wTwFk0BqrD2oFm7Uc//iAIIgrUnOgJl/d+GcmZHyVOhHiAuNwJTIP4Cnmjk8DKL7DdU8=
