@@ -16,13 +16,11 @@
 package spc
 
 import (
-	"github.com/lpabon/tm"
 	"time"
 )
 
 type AsuStats struct {
 	total, read, write IoMeter
-	Latency            tm.TimeDuration
 }
 
 func NewAsuStats() *AsuStats {
