@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-func TestIoMeterColletc(t *testing.T) {
+func TestIoMeterCollect(t *testing.T) {
 
 	spc1info := &spc1.Spc1Io{
 		Asu:    1,
