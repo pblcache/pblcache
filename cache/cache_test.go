@@ -230,6 +230,105 @@ func TestCacheSimple(t *testing.T) {
 	c.Close()
 }
 
+// This test wil check that the cache tries to place
+// as many contigous blocks as possible. We will initialize
+// the 8 slot cache with four slots, then remove slot 1 and 2
+// to leave the following: [X__X____]
+// When we put a message with 6 blocks the cache should be
+// populated as follows:  [X45X01234]
+func TestCachePutMultiple(t *testing.T) {
+	// This service will run in its own goroutine
+	// and send to mocklog any messages
+	nc := message.NewNullTerminator()
+	nc.Start()
+	defer nc.Close()
+
+	c := NewCache(8, 4096, nc.In)
+	tests.Assert(t, c != nil)
+
+	here := make(chan *message.Message)
+	buffer := make([]byte, 4096)
+
+	// Initialize data in cache
+	for i := uint64(0); i < 4; i++ {
+		m := message.NewMsgPut()
+		m.RetChan = here
+		io := m.IoPkt()
+		io.Buffer = buffer
+		io.Offset = i * 4096
+
+		// First Put
+		err := c.Put(m)
+		tests.Assert(t, err == nil)
+		<-here
+	}
+
+	c.Invalidate(&message.IoPkt{Offset: 4096, Nblocks: 2})
+	tests.Assert(t, c.stats.insertions == 4)
+	tests.Assert(t, c.stats.invalidatehits == 2)
+	tests.Assert(t, c.cachemap.bds[0].used == true)
+	tests.Assert(t, c.cachemap.bds[0].key == 0)
+	tests.Assert(t, c.cachemap.bds[1].used == false)
+	tests.Assert(t, c.cachemap.bds[2].used == false)
+	tests.Assert(t, c.cachemap.bds[3].used == true)
+	tests.Assert(t, c.cachemap.bds[3].key == 3*4096)
+
+	// Set the clock so they do not get erased
+	c.cachemap.bds[0].mru = true
+	c.cachemap.bds[3].mru = true
+
+	// Insert multiblock
+	largebuffer := make([]byte, 6*4096)
+	m := message.NewMsgPut()
+	m.RetChan = here
+	io := m.IoPkt()
+	io.Buffer = largebuffer
+	io.Offset = 10 * 4096
+	io.Nblocks = 6
+
+	// First Put
+	err := c.Put(m)
+	tests.Assert(t, err == nil)
+	<-here
+
+	tests.Assert(t, c.stats.insertions == 10)
+	tests.Assert(t, c.stats.invalidatehits == 2)
+
+	// Check the two blocks left from before
+	tests.Assert(t, c.cachemap.bds[0].used == true)
+	tests.Assert(t, c.cachemap.bds[0].key == 0)
+	tests.Assert(t, c.cachemap.bds[0].mru == false)
+
+	tests.Assert(t, c.cachemap.bds[3].used == true)
+	tests.Assert(t, c.cachemap.bds[3].key == 3*4096)
+	tests.Assert(t, c.cachemap.bds[3].mru == true)
+
+	// Now check the blocks we inserted
+	tests.Assert(t, c.cachemap.bds[4].used == true)
+	tests.Assert(t, c.cachemap.bds[4].key == 10*4096)
+	tests.Assert(t, c.cachemap.bds[4].mru == false)
+
+	tests.Assert(t, c.cachemap.bds[5].used == true)
+	tests.Assert(t, c.cachemap.bds[5].key == 11*4096)
+	tests.Assert(t, c.cachemap.bds[5].mru == false)
+
+	tests.Assert(t, c.cachemap.bds[6].used == true)
+	tests.Assert(t, c.cachemap.bds[6].key == 12*4096)
+	tests.Assert(t, c.cachemap.bds[6].mru == false)
+
+	tests.Assert(t, c.cachemap.bds[7].used == true)
+	tests.Assert(t, c.cachemap.bds[7].key == 13*4096)
+	tests.Assert(t, c.cachemap.bds[7].mru == false)
+
+	tests.Assert(t, c.cachemap.bds[1].used == true)
+	tests.Assert(t, c.cachemap.bds[1].key == 14*4096)
+	tests.Assert(t, c.cachemap.bds[1].mru == false)
+
+	tests.Assert(t, c.cachemap.bds[2].used == true)
+	tests.Assert(t, c.cachemap.bds[2].key == 15*4096)
+	tests.Assert(t, c.cachemap.bds[2].mru == false)
+}
+
 func response_handler(wg *sync.WaitGroup,
 	quit chan struct{},
 	m chan *message.Message) {

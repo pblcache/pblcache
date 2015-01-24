@@ -103,17 +103,18 @@ func (c *Cache) Put(msg *message.Message) error {
 		// policy hopefully aligns them one after the other.
 		//
 		for block := 0; block < io.Nblocks; block++ {
-			m := message.NewMsgPut()
-			msg.Add(m)
+			child := message.NewMsgPut()
+			buffer_offset := uint64(block) * c.blocksize
+			msg.Add(child)
 
-			mio := m.IoPkt()
-			mio.Offset = io.Offset + uint64(block)*c.blocksize
-			mio.Buffer = io.Buffer[uint64(block)*c.blocksize : uint64(block)*c.blocksize+c.blocksize]
-			mio.BlockNum = c.put(io.Offset)
-			mio.Nblocks = 1
+			child_io := child.IoPkt()
+			child_io.Offset = io.Offset + buffer_offset
+			child_io.Buffer = io.Buffer[buffer_offset : buffer_offset+c.blocksize]
+			child_io.BlockNum = c.put(child_io.Offset)
+			child_io.Nblocks = 1
 
 			// Send to next one in line
-			c.pipeline <- m
+			c.pipeline <- child
 		}
 	} else {
 		io.BlockNum = c.put(io.Offset)
