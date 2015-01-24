@@ -236,14 +236,18 @@ func TestCacheSimple(t *testing.T) {
 // to leave the following: [X__X____]
 // When we put a message with 6 blocks the cache should be
 // populated as follows:  [X45X01234]
-func TestCachePutMultiple(t *testing.T) {
+//
+// At the end, check multiblock Get()
+//
+func TestCacheMultiblock(t *testing.T) {
 	// This service will run in its own goroutine
 	// and send to mocklog any messages
-	nc := message.NewNullTerminator()
-	nc.Start()
-	defer nc.Close()
+	mocklog := make(chan *message.Message)
+	pipe := message.NewNullPipeline(mocklog)
+	pipe.Start()
+	defer pipe.Close()
 
-	c := NewCache(8, 4096, nc.In)
+	c := NewCache(8, 4096, pipe.In)
 	tests.Assert(t, c != nil)
 
 	here := make(chan *message.Message)
@@ -260,6 +264,8 @@ func TestCachePutMultiple(t *testing.T) {
 		// First Put
 		err := c.Put(m)
 		tests.Assert(t, err == nil)
+		retmsg := <-mocklog
+		retmsg.Done()
 		<-here
 	}
 
@@ -289,6 +295,11 @@ func TestCachePutMultiple(t *testing.T) {
 	// First Put
 	err := c.Put(m)
 	tests.Assert(t, err == nil)
+	for i := 0; i < io.Nblocks; i++ {
+		// Put send a message for each block
+		retmsg := <-mocklog
+		retmsg.Done()
+	}
 	<-here
 
 	tests.Assert(t, c.stats.insertions == 10)
@@ -327,6 +338,85 @@ func TestCachePutMultiple(t *testing.T) {
 	tests.Assert(t, c.cachemap.bds[2].used == true)
 	tests.Assert(t, c.cachemap.bds[2].key == 15*4096)
 	tests.Assert(t, c.cachemap.bds[2].mru == false)
+
+	// Check for a block not in the cache
+	m = message.NewMsgGet()
+	m.RetChan = here
+	io = m.IoPkt()
+	io.Buffer = buffer
+	io.Offset = 20 * 4096
+	io.Nblocks = 1
+	hitmap, err := c.Get(m)
+	tests.Assert(t, err == ErrNotFound)
+	tests.Assert(t, hitmap == nil)
+	tests.Assert(t, len(here) == 0)
+
+	// Get offset 0, 4 blocks.  It should return
+	// a bit map of [1001]
+	buffer4 := make([]byte, 4*4096)
+	m = message.NewMsgGet()
+	m.RetChan = here
+	io = m.IoPkt()
+	io.Buffer = buffer4
+	io.Offset = 0
+	io.Nblocks = 4
+
+	hitmap, err = c.Get(m)
+	tests.Assert(t, err == nil)
+	tests.Assert(t, hitmap.Hits == 2)
+	tests.Assert(t, len(hitmap.Hitmap) == io.Nblocks)
+	tests.Assert(t, hitmap.Hitmap[0] == true)
+	tests.Assert(t, hitmap.Hitmap[1] == false)
+	tests.Assert(t, hitmap.Hitmap[2] == false)
+	tests.Assert(t, hitmap.Hitmap[3] == true)
+	for i := 0; i < 2; i++ {
+		// Get sends a get for each contiguous blocks
+		retmsg := <-mocklog
+		retmsg.Done()
+	}
+	<-here
+
+	// Get the 6 blocks we inserted previously.  This
+	// should show that there are two sets of continguous
+	// blocks
+	m = message.NewMsgGet()
+	m.RetChan = here
+	io = m.IoPkt()
+	io.Buffer = largebuffer
+	io.Offset = 10 * 4096
+	io.Nblocks = 6
+
+	hitmap, err = c.Get(m)
+	tests.Assert(t, err == nil)
+	tests.Assert(t, hitmap.Hits == 6)
+	tests.Assert(t, len(hitmap.Hitmap) == io.Nblocks)
+	tests.Assert(t, hitmap.Hitmap[0] == true)
+	tests.Assert(t, hitmap.Hitmap[1] == true)
+	tests.Assert(t, hitmap.Hitmap[2] == true)
+	tests.Assert(t, hitmap.Hitmap[3] == true)
+	tests.Assert(t, hitmap.Hitmap[4] == true)
+	tests.Assert(t, hitmap.Hitmap[5] == true)
+
+	// The first message to the log
+	retmsg := <-mocklog
+	retio := retmsg.IoPkt()
+	tests.Assert(t, retmsg.RetChan == nil)
+	tests.Assert(t, retio.Offset == 10*4096)
+	tests.Assert(t, retio.BlockNum == 4)
+	tests.Assert(t, retio.Nblocks == 4)
+	retmsg.Done()
+
+	// Second message will have the rest of the contigous block
+	retmsg = <-mocklog
+	retio = retmsg.IoPkt()
+	tests.Assert(t, retmsg.RetChan == nil)
+	tests.Assert(t, retio.Offset == 14*4096)
+	tests.Assert(t, retio.BlockNum == 1)
+	tests.Assert(t, retio.Nblocks == 2)
+	retmsg.Done()
+
+	<-here
+
 }
 
 func response_handler(wg *sync.WaitGroup,
