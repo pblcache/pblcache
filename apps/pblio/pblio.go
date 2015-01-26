@@ -54,9 +54,6 @@ func init() {
 	flag.IntVar(&cachesize, "cachesize", 8, "\n\tCache size in GB")
 	flag.IntVar(&runlen, "runlen", 300, "\n\tBenchmark run time length in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
-	flag.IntVar(&contexts, "contexts", 1, "\n\tNumber of contexts.  Each context runs its own SPC1 generator"+
-		"\n\tEach context also has 8 streams.  Four(4) streams for ASU1, three(3)"+
-		"\n\tfor ASU2, and one for ASU3. Values are set in spc1.c:188")
 	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
 	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
 	flag.StringVar(&pbliodata, "data", "pblio.data", "\n\tStats file in CSV format")
@@ -64,7 +61,13 @@ func init() {
 }
 
 func main() {
+	// Gather command line arguments
 	flag.Parse()
+
+	// According to spc.h, this needs to be set to
+	// contexts = (b+99)/100 for SPC workload generator
+	// conformance
+	contexts = int((bsu + 99) / 100)
 
 	if asu1 == "" ||
 		asu2 == "" ||
@@ -178,7 +181,7 @@ func main() {
 
 	// Spawn contexts coroutines
 	var wg sync.WaitGroup
-	for context := 1; context <= contexts; context++ {
+	for context := 0; context < contexts; context++ {
 		wg.Add(1)
 		go spcinfo.Context(&wg, iotime, runlen, context)
 	}
