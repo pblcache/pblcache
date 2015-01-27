@@ -19,6 +19,7 @@ package cache
 import (
 	"fmt"
 	//"github.com/lpabon/buffercache"
+	"errors"
 	"github.com/lpabon/bufferio"
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
@@ -27,6 +28,13 @@ import (
 	"syscall"
 	"time"
 )
+
+type Filer interface {
+	io.Closer
+	io.Seeker
+	io.ReaderAt
+	io.WriterAt
+}
 
 const (
 	KB = 1024
@@ -37,6 +45,14 @@ const (
 	fdirectio       = false
 	fsegmentbuffers = 32
 	fsegmentsize    = 1024
+)
+
+// Allows these functions to be mocked by tests
+var (
+	openFile = func(name string, flag int, perm os.FileMode) (Filer, error) {
+		return os.OpenFile(name, flag, perm)
+	}
+	ErrLogTooSmall = errors.New("Log is too small")
 )
 
 /*
@@ -57,54 +73,80 @@ type IoSegment struct {
 }
 
 type Log struct {
-	size           uint64
-	blocksize      uint64
-	segmentsize    uint64
-	numsegments    uint64
-	blocks         uint64
-	segments       []IoSegment
-	segment        *IoSegment
-	segmentbuffers int
-	chwriting      chan *IoSegment
-	chreader       chan *IoSegment
-	chavailable    chan *IoSegment
-	wg             sync.WaitGroup
-	current        uint64
-	maxentries     uint64
-	fp             *os.File
-	wrapped        bool
-	stats          *logstats
+	size               uint64
+	blocksize          uint64
+	segmentsize        uint64
+	numsegments        uint64
+	blocks             uint64
+	segments           []IoSegment
+	segment            *IoSegment
+	segmentbuffers     int
+	chwriting          chan *IoSegment
+	chreader           chan *IoSegment
+	chavailable        chan *IoSegment
+	wg                 sync.WaitGroup
+	current            uint64
+	blocks_per_segment uint64
+	fp                 Filer
+	wrapped            bool
+	stats              *logstats
+	Msgchan            chan *message.Message
+	quitchan           chan struct{}
+	logreaders         chan *message.Message
 	//bc             buffercache.BufferCache
-	Msgchan    chan *message.Message
-	quitchan   chan struct{}
-	logreaders chan *message.Message
 }
 
-func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64) (*Log, uint64) {
+func NewLog(logfile string, blocksize, blocks_per_segment, bcsize uint64) (*Log, uint64, error) {
 
 	var err error
+	var fp Filer
 
+	// Initialize Log
 	log := &Log{}
 	log.stats = &logstats{}
 	log.blocksize = blocksize
-	log.segmentsize = blocks_per_segment * blocksize
-	log.maxentries = log.segmentsize / log.blocksize
+	log.blocks_per_segment = blocks_per_segment
+	log.segmentsize = log.blocks_per_segment * log.blocksize
+
+	// For DirectIO
+	if fdirectio {
+		fp, err = openFile(logfile, syscall.O_DIRECT|os.O_CREATE|os.O_RDWR|os.O_EXCL, os.ModePerm)
+	} else {
+		fp, err = openFile(logfile, os.O_CREATE|os.O_RDWR|os.O_EXCL, os.ModePerm)
+	}
+	godbc.Check(err == nil)
+
+	// Determine cache size
+	var size int64
+	size, err = fp.Seek(0, os.SEEK_END)
+	if err != nil {
+		return nil, 0, err
+	}
+	if size != 0 {
+		return ErrLogTooSmall
+	}
+
+	blocks := uint64(size) / blocksize
 
 	// We have to make sure that the number of blocks requested
 	// fit into the segments tracked by the log
-	log.numsegments = blocks / log.maxentries
-	log.blocks = log.numsegments * log.maxentries
+	log.numsegments = log.blocks / log.blocks_per_segment
 	log.size = log.numsegments * log.segmentsize
 
+	// maximum number of aligned blocks to segments
+	log.blocks = log.numsegments * log.blocks_per_segment
+
+	// Adjust the number of segment buffers
 	if log.numsegments < fsegmentbuffers {
 		log.segmentbuffers = int(log.numsegments)
 	} else {
 		log.segmentbuffers = fsegmentbuffers
 	}
+
 	godbc.Check(log.numsegments != 0,
 		fmt.Sprintf("bs:%v ssize:%v sbuffers:%v blocks:%v max:%v ns:%v size:%v\n",
 			log.blocksize, log.segmentsize, log.segmentbuffers, log.blocks,
-			log.maxentries, log.numsegments, log.size))
+			log.blocks_per_segment, log.numsegments, log.size))
 
 	// Create buffer cache
 	//log.bc = buffercache.NewClockCache(bcsize, log.blocksize)
@@ -136,21 +178,6 @@ func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64
 	// Set up the first available segment
 	log.segment = <-log.chreader
 
-	// Open the storage device
-	os.Remove(logfile)
-
-	// For DirectIO
-	if fdirectio {
-		log.fp, err = os.OpenFile(logfile, syscall.O_DIRECT|os.O_CREATE|os.O_RDWR|os.O_EXCL, os.ModePerm)
-	} else {
-		log.fp, err = os.OpenFile(logfile, os.O_CREATE|os.O_RDWR|os.O_EXCL, os.ModePerm)
-	}
-	godbc.Check(err == nil)
-
-	// Travis fails on this
-	//err = syscall.Fallocate(int(log.fp.Fd()), 0, 0, int64(blocks*blocksize))
-	//godbc.Check(err == nil)
-
 	godbc.Ensure(log.size != 0)
 	godbc.Ensure(log.blocksize == blocksize)
 	godbc.Ensure(log.Msgchan != nil)
@@ -178,7 +205,7 @@ func NewLog(logfile string, blocks, blocksize, blocks_per_segment, bcsize uint64
 	// be different from what the caller asked.  The log
 	// will make sure that the maximum number of blocks
 	// are contained per segment
-	return log, log.blocks
+	return log, log.blocks, nil
 }
 
 func (c *Log) logread() {
