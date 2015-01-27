@@ -163,8 +163,8 @@ func TestSpc1Init(t *testing.T) {
 	s := NewSpcInfo(cache, usedirectio, blocksize)
 
 	// Set fake len
-	s.asus[ASU1].len = 55
-	s.asus[ASU2].len = 45
+	s.asus[ASU1].len = 5500
+	s.asus[ASU2].len = 4500
 
 	// Set asu3 to a value that is too small
 	s.asus[ASU3].len = 1
@@ -178,18 +178,18 @@ func TestSpc1Init(t *testing.T) {
 	tests.Assert(t, err != nil)
 
 	// Set fake len
-	s.asus[ASU1].len = 55
-	s.asus[ASU2].len = 45
-	s.asus[ASU3].len = 10
+	s.asus[ASU1].len = 5500
+	s.asus[ASU2].len = 4500
+	s.asus[ASU3].len = 1000
 	err = s.Spc1Init(bsu, contexts)
 
 	// Now it should succeed
 	tests.Assert(t, err == nil)
 
 	// Check that the sizes where adjusted
-	tests.Assert(t, s.asus[ASU1].len == 45)
-	tests.Assert(t, s.asus[ASU2].len == 45)
-	tests.Assert(t, s.asus[ASU3].len == 10)
+	tests.Assert(t, s.asus[ASU1].len == 4500)
+	tests.Assert(t, s.asus[ASU2].len == 4500)
+	tests.Assert(t, s.asus[ASU3].len == 1000)
 
 	// Check spc1 was initialized
 	io := spc1.NewSpc1Io(1)
@@ -205,28 +205,25 @@ func TestSpcContext(t *testing.T) {
 	blocksize := 4 * KB
 	s := NewSpcInfo(cache, usedirectio, blocksize)
 
-	// Setup asus for I/O
-	asu1file := tests.Tempfile()
-	err := createfile(asu1file, 45*MB)
-	tests.Assert(t, err == nil)
-	defer os.Remove(asu1file)
+	// Setup Mockfile
+	mockfile := tests.NewMockFile()
+	seeklen := int64(4 * 1024 * 1024 * 1024)
+	mockfile.MockSeek = func(offset int64, whence int) (int64, error) {
+		return seeklen, nil
+	}
 
-	asu2file := tests.Tempfile()
-	err = createfile(asu2file, 45*MB)
-	tests.Assert(t, err == nil)
-	defer os.Remove(asu2file)
-
-	asu3file := tests.Tempfile()
-	err = createfile(asu3file, 10*MB)
-	tests.Assert(t, err == nil)
-	defer os.Remove(asu3file)
+	// Mock openfile
+	defer tests.Patch(&openFile,
+		func(name string, flag int, perm os.FileMode) (Filer, error) {
+			return mockfile, nil
+		}).Restore()
 
 	// Open files
-	err = s.Open(1, asu1file)
+	err := s.Open(1, "asu1file")
 	tests.Assert(t, err == nil)
-	err = s.Open(2, asu2file)
+	err = s.Open(2, "asu2file")
 	tests.Assert(t, err == nil)
-	err = s.Open(3, asu3file)
+	err = s.Open(3, "asu3file")
 	tests.Assert(t, err == nil)
 
 	// Initialize
