@@ -17,11 +17,20 @@
 package cache
 
 import (
+	"compress/gzip"
+	"encoding/gob"
 	"errors"
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
+	"os"
 	"sync"
 )
+
+type CacheSave struct {
+	Cachemap          *CacheMapSave
+	Addressmap        map[uint64]uint64
+	Blocks, Blocksize uint64
+}
 
 type Cache struct {
 	stats             *cachestats
@@ -277,4 +286,65 @@ func (c *Cache) Stats() *CacheStats {
 
 func (c *Cache) StatsClear() {
 	c.stats.clear()
+}
+
+func (c *Cache) Save(filename string) error {
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	cs := &CacheSave{}
+	cs.Cachemap = c.cachemap.Save()
+	cs.Addressmap = c.addressmap
+	cs.Blocks = c.blocks
+	cs.Blocksize = c.blocksize
+
+	fi, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer fi.Close()
+
+	fz := gzip.NewWriter(fi)
+	defer fz.Close()
+
+	encoder := gob.NewEncoder(fz)
+	err = encoder.Encode(cs)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Cache) Load(filename string) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	cs := &CacheSave{}
+
+	fi, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer fi.Close()
+
+	fz, err := gzip.NewReader(fi)
+	if err != nil {
+		return err
+	}
+	defer fz.Close()
+
+	decoder := gob.NewDecoder(fz)
+	err = decoder.Decode(&cs)
+	if err != nil {
+		return err
+	}
+
+	c.cachemap.Load(cs.Cachemap)
+	c.addressmap = cs.Addressmap
+	c.blocks = cs.Blocks
+	c.blocksize = cs.Blocksize
+
+	return nil
 }
