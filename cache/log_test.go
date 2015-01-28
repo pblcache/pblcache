@@ -30,9 +30,21 @@ import (
 
 func TestNewLog(t *testing.T) {
 
+	mockfile := tests.NewMockFile()
+	seeklen := int64(16 * 4096)
+	mockfile.MockSeek = func(offset int64, whence int) (int64, error) {
+		return seeklen, nil
+	}
+
+	// Mock openFile
+	defer tests.Patch(&openFile,
+		func(name string, flag int, perm os.FileMode) (Filer, error) {
+			return mockfile, nil
+		}).Restore()
+
 	// Simple log
-	testcachefile := tests.Tempfile()
-	l, blocks := NewLog(testcachefile, 16, 4096, 4, 4096*2)
+	l, blocks, err := NewLog("file", 4096, 4, 4096*2)
+	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == 16)
 	l.Close()
@@ -41,21 +53,26 @@ func TestNewLog(t *testing.T) {
 	// blocks that are aligned to the segments.
 	// 17 blocks are not aligned to a segment with 4 blocks
 	// per segment
-	l, blocks = NewLog(testcachefile, 17, 4096, 4, 4096*2)
+	seeklen = 17 * 4096
+	l, blocks, err = NewLog("file", 4096, 4, 4096*2)
+	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == 16)
 	l.Close()
-
-	// Cleanup
-	os.Remove(testcachefile)
 }
 
 // Should wrap four times
 func TestWrapPut(t *testing.T) {
 	// Simple log
 	blocks := uint64(16)
+
 	testcachefile := tests.Tempfile()
-	l, logblocks := NewLog(testcachefile, blocks, 4096, 2, 4096*2)
+	err := tests.CreateFile(testcachefile, 16*4096)
+	tests.Assert(t, nil == err)
+	defer os.Remove(testcachefile)
+
+	l, logblocks, err := NewLog(testcachefile, 4096, 2, 4096*2)
+	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)
 
@@ -84,9 +101,6 @@ func TestWrapPut(t *testing.T) {
 
 	// Check that we have wrapped the correct number of times
 	tests.Assert(t, l.Stats().Wraps == wraps)
-
-	// Cleanup
-	os.Remove(testcachefile)
 }
 
 func TestReadCorrectness(t *testing.T) {
@@ -96,11 +110,13 @@ func TestReadCorrectness(t *testing.T) {
 	blocks_per_segment := uint64(2)
 	buffercache := uint64(4096 * 10)
 	testcachefile := tests.Tempfile()
-	l, logblocks := NewLog(testcachefile,
-		blocks,
+	tests.Assert(t, nil == tests.CreateFile(testcachefile, int64(blocks*4096)))
+	defer os.Remove(testcachefile)
+	l, logblocks, err := NewLog(testcachefile,
 		bs,
 		blocks_per_segment,
 		buffercache)
+	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)
 
@@ -158,7 +174,6 @@ func TestReadCorrectness(t *testing.T) {
 	}
 
 	l.Close()
-	os.Remove(testcachefile)
 }
 
 func logtest_response_handler(
@@ -215,11 +230,13 @@ func TestLogConcurrency(t *testing.T) {
 	blocks_per_segment := uint64(2)
 	buffercache := uint64(4096 * 24)
 	testcachefile := tests.Tempfile()
-	l, logblocks := NewLog(testcachefile,
-		blocks,
+	tests.Assert(t, nil == tests.CreateFile(testcachefile, int64(blocks*4096)))
+	defer os.Remove(testcachefile)
+	l, logblocks, err := NewLog(testcachefile,
 		bs,
 		blocks_per_segment,
 		buffercache)
+	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)
 

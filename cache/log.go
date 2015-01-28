@@ -23,6 +23,7 @@ import (
 	"github.com/lpabon/bufferio"
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
+	"io"
 	"os"
 	"sync"
 	"syscall"
@@ -99,7 +100,6 @@ type Log struct {
 func NewLog(logfile string, blocksize, blocks_per_segment, bcsize uint64) (*Log, uint64, error) {
 
 	var err error
-	var fp Filer
 
 	// Initialize Log
 	log := &Log{}
@@ -110,23 +110,25 @@ func NewLog(logfile string, blocksize, blocks_per_segment, bcsize uint64) (*Log,
 
 	// For DirectIO
 	if fdirectio {
-		fp, err = openFile(logfile, syscall.O_DIRECT|os.O_CREATE|os.O_RDWR|os.O_EXCL, os.ModePerm)
+		log.fp, err = openFile(logfile, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
 	} else {
-		fp, err = openFile(logfile, os.O_CREATE|os.O_RDWR|os.O_EXCL, os.ModePerm)
+		log.fp, err = openFile(logfile, os.O_RDWR|os.O_EXCL, os.ModePerm)
 	}
-	godbc.Check(err == nil)
-
-	// Determine cache size
-	var size int64
-	size, err = fp.Seek(0, os.SEEK_END)
 	if err != nil {
 		return nil, 0, err
 	}
-	if size != 0 {
-		return ErrLogTooSmall
+
+	// Determine cache size
+	var size int64
+	size, err = log.fp.Seek(0, os.SEEK_END)
+	if err != nil {
+		return nil, 0, err
+	}
+	if size == 0 {
+		return nil, 0, ErrLogTooSmall
 	}
 
-	blocks := uint64(size) / blocksize
+	log.blocks = uint64(size) / blocksize
 
 	// We have to make sure that the number of blocks requested
 	// fit into the segments tracked by the log
@@ -196,9 +198,10 @@ func NewLog(logfile string, blocksize, blocks_per_segment, bcsize uint64) (*Log,
 		log.wg.Add(1)
 		go log.logread()
 	}
-	log.server()
-	log.writer()
-	log.reader()
+	go log.server()
+	go log.writer()
+	go log.reader()
+	log.wg.Add(3)
 
 	// Return the log object to the caller.
 	// Also return the maximum number of blocks, which may
@@ -221,10 +224,6 @@ func (c *Log) logread() {
 		c.stats.ReadTimeRecord(end.Sub(start))
 
 		godbc.Check(n == len(iopkt.Buffer))
-		/*
-			fmt.Sprintf("Read %v expected %v from location %v index %v",
-				n, iopkt.Buffer, offset, iopkt.BlockNum))
-		*/
 		godbc.Check(err == nil)
 		c.stats.StorageHit()
 
@@ -237,106 +236,92 @@ func (c *Log) logread() {
 }
 
 func (c *Log) server() {
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		emptychan := false
-		for {
-			// Check if we have been signaled through <-quit
-			// If we have, we now know that as soon as the
-			// message channel is empty, we can quit.
-			if emptychan {
-				if len(c.Msgchan) == 0 {
-					break
-				}
-			}
-
-			select {
-			case msg := <-c.Msgchan:
-				switch msg.Type {
-				case message.MsgPut:
-					c.put(msg)
-				case message.MsgGet:
-					c.get(msg)
-				}
-			case <-c.quitchan:
-				// :TODO: Ok for now, but we cannot just quit
-				// We need to empty the Iochan
-				emptychan = true
+	defer c.wg.Done()
+	emptychan := false
+	for {
+		// Check if we have been signaled through <-quit
+		// If we have, we now know that as soon as the
+		// message channel is empty, we can quit.
+		if emptychan {
+			if len(c.Msgchan) == 0 {
+				break
 			}
 		}
 
-		// We are closing the log.  Need to shut down the channels
-		if c.segment.written {
-			c.sync()
+		select {
+		case msg := <-c.Msgchan:
+			switch msg.Type {
+			case message.MsgPut:
+				c.put(msg)
+			case message.MsgGet:
+				c.get(msg)
+			}
+		case <-c.quitchan:
+			// :TODO: Ok for now, but we cannot just quit
+			// We need to empty the Iochan
+			emptychan = true
 		}
-		close(c.chwriting)
-		close(c.logreaders)
+	}
 
-	}()
+	// We are closing the log.  Need to shut down the channels
+	if c.segment.written {
+		c.sync()
+	}
+	close(c.chwriting)
+	close(c.logreaders)
 }
 
 func (c *Log) writer() {
+	defer c.wg.Done()
+	for s := range c.chwriting {
+		if s.written {
+			start := time.Now()
+			n, err := c.fp.WriteAt(s.segmentbuf, int64(s.offset))
+			end := time.Now()
+			s.written = false
 
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		for s := range c.chwriting {
-			if s.written {
-				start := time.Now()
-				n, err := c.fp.WriteAt(s.segmentbuf, int64(s.offset))
-				end := time.Now()
-				s.written = false
-
-				c.stats.WriteTimeRecord(end.Sub(start))
-				godbc.Check(n == len(s.segmentbuf))
-				godbc.Check(err == nil)
-			} else {
-				c.stats.SegmentSkipped()
-			}
-			c.chreader <- s
+			c.stats.WriteTimeRecord(end.Sub(start))
+			godbc.Check(n == len(s.segmentbuf))
+			godbc.Check(err == nil)
+		} else {
+			c.stats.SegmentSkipped()
 		}
-		close(c.chreader)
-	}()
-
+		c.chreader <- s
+	}
+	close(c.chreader)
 }
 
 func (c *Log) reader() {
+	defer c.wg.Done()
+	for s := range c.chreader {
+		s.lock.Lock()
 
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		for s := range c.chreader {
-			s.lock.Lock()
+		// Reset the bufferIO managers
+		s.data.Reset()
 
-			// Reset the bufferIO managers
-			s.data.Reset()
+		// Move to the next offset
+		c.current += c.segmentsize
+		c.current = c.current % c.size
 
-			// Move to the next offset
-			c.current += c.segmentsize
-			c.current = c.current % c.size
-
-			if 0 == c.current {
-				c.stats.Wrapped()
-				c.wrapped = true
-			}
-			s.offset = c.current
-
-			if c.wrapped {
-				start := time.Now()
-				n, err := c.fp.ReadAt(s.segmentbuf, int64(s.offset))
-				end := time.Now()
-				c.stats.SegmentReadTimeRecord(end.Sub(start))
-				godbc.Check(n == len(s.segmentbuf))
-				godbc.Check(err == nil)
-			}
-
-			s.lock.Unlock()
-
-			c.chavailable <- s
+		if 0 == c.current {
+			c.stats.Wrapped()
+			c.wrapped = true
 		}
-	}()
+		s.offset = c.current
 
+		if c.wrapped {
+			start := time.Now()
+			n, err := c.fp.ReadAt(s.segmentbuf, int64(s.offset))
+			end := time.Now()
+			c.stats.SegmentReadTimeRecord(end.Sub(start))
+			godbc.Check(n == len(s.segmentbuf))
+			godbc.Check(err == nil)
+		}
+
+		s.lock.Unlock()
+
+		c.chavailable <- s
+	}
 }
 
 func (c *Log) sync() {
@@ -379,9 +364,6 @@ func (c *Log) put(msg *message.Message) error {
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
 	godbc.Check(n == len(iopkt.Buffer))
-	/*
-		fmt.Sprintf("n:%v len:%v", n, len(iopkt.Buffer)))
-	*/
 	godbc.Check(err == nil)
 
 	c.segment.written = true
@@ -428,19 +410,10 @@ func (c *Log) get(msg *message.Message) error {
 
 				godbc.Check(err == nil, err, block, offset, i)
 				godbc.Check(uint64(n) == c.blocksize)
-				/*
-					fmt.Sprintf("Read %v expected:%v from location:%v iopkt.BlockNum:%v",
-						n, c.blocksize, offset, iopkt.BlockNum))
-				*/
 				c.stats.RamHit()
 
 				// Save in buffer cache
 				//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
-
-				// Return message
-				//msg.Done()
-
-				//return nil
 			}
 			c.segments[i].lock.RUnlock()
 		}

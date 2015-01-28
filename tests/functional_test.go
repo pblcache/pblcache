@@ -89,13 +89,16 @@ func TestSimpleCache(t *testing.T) {
 	blocks := uint64(logsize / blocksize)
 	blocks_per_segment := uint64(32)
 	bcsize := uint64(1 * cache.MB)
-	logfile := Tempfile()
 
-	log, actual_blocks := cache.NewLog(logfile,
-		blocks,
+	logfile := Tempfile()
+	err := CreateFile(logfile, int64(blocks*blocksize))
+	Assert(t, err == nil)
+
+	log, actual_blocks, err := cache.NewLog(logfile,
 		blocksize,
 		blocks_per_segment,
 		bcsize)
+	Assert(t, err == nil)
 	c := cache.NewCache(actual_blocks, blocksize, log.Msgchan)
 	defer os.Remove(logfile)
 
