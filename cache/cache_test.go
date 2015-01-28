@@ -21,6 +21,7 @@ import (
 	"github.com/pblcache/pblcache/message"
 	"github.com/pblcache/pblcache/tests"
 	"math/rand"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -272,16 +273,16 @@ func TestCacheMultiblock(t *testing.T) {
 	c.Invalidate(&message.IoPkt{Offset: 4096, Nblocks: 2})
 	tests.Assert(t, c.stats.insertions == 4)
 	tests.Assert(t, c.stats.invalidatehits == 2)
-	tests.Assert(t, c.cachemap.bds[0].used == true)
-	tests.Assert(t, c.cachemap.bds[0].key == 0)
-	tests.Assert(t, c.cachemap.bds[1].used == false)
-	tests.Assert(t, c.cachemap.bds[2].used == false)
-	tests.Assert(t, c.cachemap.bds[3].used == true)
-	tests.Assert(t, c.cachemap.bds[3].key == 3*4096)
+	tests.Assert(t, c.cachemap.bds[0].Used == true)
+	tests.Assert(t, c.cachemap.bds[0].Key == 0)
+	tests.Assert(t, c.cachemap.bds[1].Used == false)
+	tests.Assert(t, c.cachemap.bds[2].Used == false)
+	tests.Assert(t, c.cachemap.bds[3].Used == true)
+	tests.Assert(t, c.cachemap.bds[3].Key == 3*4096)
 
 	// Set the clock so they do not get erased
-	c.cachemap.bds[0].mru = true
-	c.cachemap.bds[3].mru = true
+	c.cachemap.bds[0].Mru = true
+	c.cachemap.bds[3].Mru = true
 
 	// Insert multiblock
 	largebuffer := make([]byte, 6*4096)
@@ -306,38 +307,38 @@ func TestCacheMultiblock(t *testing.T) {
 	tests.Assert(t, c.stats.invalidatehits == 2)
 
 	// Check the two blocks left from before
-	tests.Assert(t, c.cachemap.bds[0].used == true)
-	tests.Assert(t, c.cachemap.bds[0].key == 0)
-	tests.Assert(t, c.cachemap.bds[0].mru == false)
+	tests.Assert(t, c.cachemap.bds[0].Used == true)
+	tests.Assert(t, c.cachemap.bds[0].Key == 0)
+	tests.Assert(t, c.cachemap.bds[0].Mru == false)
 
-	tests.Assert(t, c.cachemap.bds[3].used == true)
-	tests.Assert(t, c.cachemap.bds[3].key == 3*4096)
-	tests.Assert(t, c.cachemap.bds[3].mru == true)
+	tests.Assert(t, c.cachemap.bds[3].Used == true)
+	tests.Assert(t, c.cachemap.bds[3].Key == 3*4096)
+	tests.Assert(t, c.cachemap.bds[3].Mru == true)
 
 	// Now check the blocks we inserted
-	tests.Assert(t, c.cachemap.bds[4].used == true)
-	tests.Assert(t, c.cachemap.bds[4].key == 10*4096)
-	tests.Assert(t, c.cachemap.bds[4].mru == false)
+	tests.Assert(t, c.cachemap.bds[4].Used == true)
+	tests.Assert(t, c.cachemap.bds[4].Key == 10*4096)
+	tests.Assert(t, c.cachemap.bds[4].Mru == false)
 
-	tests.Assert(t, c.cachemap.bds[5].used == true)
-	tests.Assert(t, c.cachemap.bds[5].key == 11*4096)
-	tests.Assert(t, c.cachemap.bds[5].mru == false)
+	tests.Assert(t, c.cachemap.bds[5].Used == true)
+	tests.Assert(t, c.cachemap.bds[5].Key == 11*4096)
+	tests.Assert(t, c.cachemap.bds[5].Mru == false)
 
-	tests.Assert(t, c.cachemap.bds[6].used == true)
-	tests.Assert(t, c.cachemap.bds[6].key == 12*4096)
-	tests.Assert(t, c.cachemap.bds[6].mru == false)
+	tests.Assert(t, c.cachemap.bds[6].Used == true)
+	tests.Assert(t, c.cachemap.bds[6].Key == 12*4096)
+	tests.Assert(t, c.cachemap.bds[6].Mru == false)
 
-	tests.Assert(t, c.cachemap.bds[7].used == true)
-	tests.Assert(t, c.cachemap.bds[7].key == 13*4096)
-	tests.Assert(t, c.cachemap.bds[7].mru == false)
+	tests.Assert(t, c.cachemap.bds[7].Used == true)
+	tests.Assert(t, c.cachemap.bds[7].Key == 13*4096)
+	tests.Assert(t, c.cachemap.bds[7].Mru == false)
 
-	tests.Assert(t, c.cachemap.bds[1].used == true)
-	tests.Assert(t, c.cachemap.bds[1].key == 14*4096)
-	tests.Assert(t, c.cachemap.bds[1].mru == false)
+	tests.Assert(t, c.cachemap.bds[1].Used == true)
+	tests.Assert(t, c.cachemap.bds[1].Key == 14*4096)
+	tests.Assert(t, c.cachemap.bds[1].Mru == false)
 
-	tests.Assert(t, c.cachemap.bds[2].used == true)
-	tests.Assert(t, c.cachemap.bds[2].key == 15*4096)
-	tests.Assert(t, c.cachemap.bds[2].mru == false)
+	tests.Assert(t, c.cachemap.bds[2].Used == true)
+	tests.Assert(t, c.cachemap.bds[2].Key == 15*4096)
+	tests.Assert(t, c.cachemap.bds[2].Mru == false)
 
 	// Check for a block not in the cache
 	m = message.NewMsgGet()
@@ -417,6 +418,59 @@ func TestCacheMultiblock(t *testing.T) {
 
 	<-here
 
+	// Save the cache metadata
+	save := tests.Tempfile()
+	defer os.Remove(save)
+	err = c.Save(save)
+	tests.Assert(t, err == nil)
+
+	c.Close()
+	c = NewCache(8, 4096, pipe.In)
+	tests.Assert(t, c != nil)
+
+	err = c.Load(save)
+	tests.Assert(t, err == nil)
+
+	// Get data again.
+	m = message.NewMsgGet()
+	m.RetChan = here
+	io = m.IoPkt()
+	io.Buffer = largebuffer
+	io.Offset = 10 * 4096
+	io.Nblocks = 6
+
+	hitmap, err = c.Get(m)
+	tests.Assert(t, err == nil)
+	tests.Assert(t, hitmap.Hits == 6)
+	tests.Assert(t, len(hitmap.Hitmap) == io.Nblocks)
+	tests.Assert(t, hitmap.Hitmap[0] == true)
+	tests.Assert(t, hitmap.Hitmap[1] == true)
+	tests.Assert(t, hitmap.Hitmap[2] == true)
+	tests.Assert(t, hitmap.Hitmap[3] == true)
+	tests.Assert(t, hitmap.Hitmap[4] == true)
+	tests.Assert(t, hitmap.Hitmap[5] == true)
+
+	// The first message to the log
+	retmsg = <-mocklog
+	retio = retmsg.IoPkt()
+	tests.Assert(t, retmsg.RetChan == nil)
+	tests.Assert(t, retio.Offset == 10*4096)
+	tests.Assert(t, retio.BlockNum == 4)
+	tests.Assert(t, retio.Nblocks == 4)
+	retmsg.Done()
+
+	// Second message will have the rest of the contigous block
+	retmsg = <-mocklog
+	retio = retmsg.IoPkt()
+	tests.Assert(t, retmsg.RetChan == nil)
+	tests.Assert(t, retio.Offset == 14*4096)
+	tests.Assert(t, retio.BlockNum == 1)
+	tests.Assert(t, retio.Nblocks == 2)
+	retmsg.Done()
+
+	<-here
+
+	c.Close()
 }
 
 func response_handler(wg *sync.WaitGroup,

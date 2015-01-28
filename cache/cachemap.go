@@ -25,9 +25,15 @@ const (
 )
 
 type BlockDescriptor struct {
-	key  uint64
-	mru  bool
-	used bool
+	Key  uint64
+	Mru  bool
+	Used bool
+}
+
+type CacheMapSave struct {
+	Bds   []BlockDescriptor
+	Size  uint64
+	Index uint64
 }
 
 type CacheMap struct {
@@ -56,13 +62,13 @@ func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
 			entry := &c.bds[c.index]
 
 			// CLOCK: If it has been used recently, then do not evict
-			if entry.mru {
-				entry.mru = false
+			if entry.Mru {
+				entry.Mru = false
 			} else {
 
 				// If it is in use, then we need to evict the older key
-				if entry.used {
-					evictkey = entry.key
+				if entry.Used {
+					evictkey = entry.Key
 					evict = true
 				} else {
 					evictkey = INVALID_KEY
@@ -73,9 +79,9 @@ func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
 				newindex = c.index
 
 				// Setup current cachemap entry
-				entry.key = key
-				entry.mru = false
-				entry.used = true
+				entry.Key = key
+				entry.Mru = false
+				entry.Used = true
 
 				// Set index to next cachemap entry
 				c.index++
@@ -88,11 +94,26 @@ func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
 }
 
 func (c *CacheMap) Using(index uint64) {
-	c.bds[index].mru = true
+	c.bds[index].Mru = true
 }
 
 func (c *CacheMap) Free(index uint64) {
-	c.bds[index].mru = false
-	c.bds[index].used = false
-	c.bds[index].key = INVALID_KEY
+	c.bds[index].Mru = false
+	c.bds[index].Used = false
+	c.bds[index].Key = INVALID_KEY
+}
+
+func (c *CacheMap) Save() *CacheMapSave {
+	cs := &CacheMapSave{}
+	cs.Bds = c.bds
+	cs.Index = c.index
+	cs.Size = c.size
+
+	return cs
+}
+
+func (c *CacheMap) Load(cs *CacheMapSave) {
+	c.bds = cs.Bds
+	c.index = cs.Index
+	c.size = cs.Size
 }
