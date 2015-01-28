@@ -51,6 +51,7 @@ var (
 	blocksize, contexts      int
 	bsu, dataperiod          int
 	usedirectio, cpuprofile  bool
+	cachesavefile            string
 )
 
 func init() {
@@ -58,6 +59,7 @@ func init() {
 	flag.StringVar(&asu2, "asu2", "", "\n\tASU2 - User Store")
 	flag.StringVar(&asu3, "asu3", "", "\n\tLog")
 	flag.StringVar(&cachefilename, "cache", "", "\n\tCache file name")
+	flag.StringVar(&cachesavefile, "cachemeta", "cache.pbl", "\n\tPersistent cache metadata location")
 	flag.IntVar(&bsu, "bsu", 50, "\n\tNumber of BSUs (Business Scaling Units)."+
 		"\n\tEach BSU requires 50 IOPs from the back end storage")
 	flag.IntVar(&runlen, "runlen", 300, "\n\tBenchmark run time length in seconds")
@@ -121,9 +123,20 @@ func main() {
 
 		// Connect cache metadata with log
 		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
-		fmt.Printf("Cache   : %s\n"+
+		cache_state := "New"
+		if _, err = os.Stat(cachesavefile); err == nil {
+			err = c.Load(cachesavefile)
+			if err != nil {
+				fmt.Printf("Unable to load metadata: %s", err)
+				return
+			}
+			cache_state = "Loaded"
+		}
+
+		// Print banner
+		fmt.Printf("Cache   : %s (%s)\n"+
 			"C Size  : %.2f GB\n",
-			cachefilename,
+			cachefilename, cache_state,
 			float64(logblocks*blocksize_bytes)/GB)
 	} else {
 		fmt.Println("Cache   : None")
@@ -279,6 +292,11 @@ func main() {
 	if c != nil {
 		c.Close()
 		log.Close()
+		err = c.Save(cachesavefile)
+		if err != nil {
+			fmt.Printf("Unable to save metadata: %s\n", err)
+			os.Remove(cachesavefile)
+		}
 		fmt.Print(c)
 		fmt.Print(log)
 	}
