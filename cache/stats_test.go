@@ -123,8 +123,8 @@ func TestCacheStatsCsv(t *testing.T) {
 	stats := s.stats()
 	slice := strings.Split(stats.Csv(), ",")
 
-	// 8 elements per csv line
-	tests.Assert(t, len(slice) == 8)
+	// 8 elements per csv line + the empty
+	tests.Assert(t, len(slice) == 9)
 	tests.Assert(t, slice[0] == fmt.Sprintf("%v", stats.ReadHitRate()))
 	tests.Assert(t, slice[1] == fmt.Sprintf("%v", stats.InvalidateHitRate()))
 	tests.Assert(t, slice[2] == strconv.FormatUint(s.readhits, 10))
@@ -157,8 +157,8 @@ func TestCacheStatsCsvDelta(t *testing.T) {
 	stats2 := s2.stats()
 	slice := strings.Split(stats2.CsvDelta(stats1), ",")
 
-	// 8 elements per csv line
-	tests.Assert(t, len(slice) == 8)
+	// 8 elements per csv line + the empty
+	tests.Assert(t, len(slice) == 9)
 	tests.Assert(t, slice[0] == fmt.Sprintf("%v", stats2.ReadHitRateDelta(stats1)))
 	tests.Assert(t, slice[1] == fmt.Sprintf("%v", stats2.InvalidateHitRateDelta(stats1)))
 	tests.Assert(t, slice[2] == strconv.FormatUint(s2.readhits-s1.readhits, 10))

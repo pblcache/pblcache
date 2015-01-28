@@ -16,8 +16,8 @@
 # limitations under the License.
 #
 
-# Make a new table by averaging data over larger period of time
-# Note: It would be great to convert this to RRDtool :-)
+import json
+import rrdtool
 
 # Default input is every 5 secs
 In_Period=5
@@ -27,31 +27,35 @@ Out_Period=30*60
 
 # Convert from pblio.data -> pblio.csv
 fp = open('pblio.data', 'r')
-out = open('pblio.csv', 'w')
-
-# Cover data
-ROWS=(Out_Period/In_Period) # For 5 sec rows, this is 30m
-row=ROWS
-out_row=1
-for line in fp.readlines():
-	csv = line.split(',')
-	csv = map(float, csv)
-	if row == ROWS:
-		com = csv
-		row -= 1
-		continue
-
-	com = [i+j for i,j in zip(com, csv)]
-	row-=1
-	if row == 0:
-		avg = map(lambda x: x/ROWS, com)
-		avg[0] = (In_Period*out_row*ROWS)/60
-		out.write(','.join(map(str, avg))+ '\n')
-		row = ROWS
-		out_row += 1
-
-out.close()
+line = fp.readline()
+jsondata = json.loads(line)
 fp.close()
 
+# Setup info
+data_sources = ['DS:tlat_duration:COUNTER:600:0:U',
+				'DS:tlat_counter:COUNTER:600:0:U']
 
+# Create db
+rrdtool.create('pblio.rrd',
+	'--start', "%d" % (jsondata['time']),
+	'--step', '5',
+	data_sources,
+	'RRA:AVERAGE:0.5:6:300',
+	'RRA:AVERAGE:0.5:360:1200',
+	'RRA:AVERAGE:0.5:1440:1200')
+
+# Cover data
+rrdtime=In_Period+jsondata['time']
+rrd = None
+
+fp = open('pblio.data', 'r')
+for line in fp.readlines():
+	stat = json.loads(line)
+	rrdtool.update('pblio.rrd',
+		("%d:" % rrdtime) +
+		("%d:" % stat['spc']['total']['latency']['duration']) +
+		("%d" % stat['spc']['total']['latency']['count']))
+	rrdtime+=In_Period
+
+fp.close()
 

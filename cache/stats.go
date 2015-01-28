@@ -98,7 +98,7 @@ func (c *CacheStats) Csv() string {
 			"%d,"+ // Reads 5
 			"%d,"+ // Insertions 6
 			"%d,"+ // Evictions 7
-			"%d", // Invalidations 8
+			"%d,", // Invalidations 8
 		c.ReadHitRate(),
 		c.InvalidateHitRate(),
 		c.Readhits,
@@ -119,7 +119,7 @@ func (c *CacheStats) CsvDelta(prev *CacheStats) string {
 			"%d,"+ // Reads 5
 			"%d,"+ // Insertions 6
 			"%d,"+ // Evictions 7
-			"%d", // Invalidations 8
+			"%d,", // Invalidations 8
 		c.ReadHitRateDelta(prev),
 		c.InvalidateHitRateDelta(prev),
 		c.Readhits-prev.Readhits,

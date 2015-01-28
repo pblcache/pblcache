@@ -24,15 +24,15 @@ import (
 )
 
 type LogStats struct {
-	Ramhits         uint64  `json:"ramhits"`
-	Storagehits     uint64  `json:"storagehits"`
-	Wraps           uint64  `json:"wraps"`
-	Seg_skipped     uint64  `json:"segments_skipped"`
-	Bufferhits      uint64  `json:"buffercachehits"`
-	Totalhits       uint64  `json:"totalhits"`
-	Readtime        float64 `json:"mean_read_usecs"`
-	Segmentreadtime float64 `json:"mean_segmentread_usecs"`
-	Writetime       float64 `json:"mean_segmentwrite_usecs"`
+	Ramhits         uint64           `json:"ramhits"`
+	Storagehits     uint64           `json:"storagehits"`
+	Wraps           uint64           `json:"wraps"`
+	Seg_skipped     uint64           `json:"segments_skipped"`
+	Bufferhits      uint64           `json:"buffercachehits"`
+	Totalhits       uint64           `json:"totalhits"`
+	Readtime        *tm.TimeDuration `json:"mean_read_usecs"`
+	Segmentreadtime *tm.TimeDuration `json:"mean_segmentread_usecs"`
+	Writetime       *tm.TimeDuration `json:"mean_segmentwrite_usecs"`
 }
 
 func (s *LogStats) RamHitRate() float64 {
@@ -70,9 +70,30 @@ func (s *LogStats) String() string {
 		s.Storagehits,
 		s.Wraps,
 		s.Seg_skipped,
-		s.Readtime,
-		s.Segmentreadtime,
-		s.Writetime)
+		s.Readtime.MeanTimeUsecs(),
+		s.Segmentreadtime.MeanTimeUsecs(),
+		s.Writetime.MeanTimeUsecs())
+}
+
+func (s *LogStats) Csv() string {
+	return fmt.Sprintf(
+		"%v,"+ // 1 Ram Hit Rate
+			"%v,"+ // 2 Ram Hits
+			"%v,"+ // 4 Buffer Hit Rate
+			"%v,"+ // 5 Buffer Hits
+			"%v,"+ // 6 Storage Hits
+			"%v,"+ // 7 Wraps
+			"%v,", // 8 Segments Skipped
+		s.RamHitRate(),
+		s.Ramhits,
+		s.BufferHitRate(),
+		s.Bufferhits,
+		s.Storagehits,
+		s.Wraps,
+		s.Seg_skipped) +
+		s.Readtime.Csv() + // 9,10
+		s.Segmentreadtime.Csv() + // 11,12
+		s.Writetime.Csv() // 13,14
 }
 
 type logstats struct {
@@ -101,9 +122,9 @@ func (s *logstats) Stats() *LogStats {
 		Seg_skipped:     scopy.seg_skipped,
 		Bufferhits:      scopy.bufferhits,
 		Totalhits:       scopy.totalhits,
-		Readtime:        scopy.readtime.MeanTimeUsecs(),
-		Segmentreadtime: scopy.segmentreadtime.MeanTimeUsecs(),
-		Writetime:       scopy.writetime.MeanTimeUsecs(),
+		Readtime:        scopy.readtime.Copy(),
+		Segmentreadtime: scopy.segmentreadtime.Copy(),
+		Writetime:       scopy.writetime.Copy(),
 	}
 }
 

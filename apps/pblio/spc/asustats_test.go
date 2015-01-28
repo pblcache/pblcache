@@ -43,18 +43,18 @@ func TestAsuStatCollect(t *testing.T) {
 
 	asumeter := &AsuStats{}
 	asumeter.Collect(stat)
-	tests.Assert(t, asumeter.read.blocks == 1)
-	tests.Assert(t, asumeter.write.blocks == 0)
-	tests.Assert(t, asumeter.total.blocks == 1)
+	tests.Assert(t, asumeter.Read.Blocks == 1)
+	tests.Assert(t, asumeter.Write.Blocks == 0)
+	tests.Assert(t, asumeter.Total.Blocks == 1)
 
 	// Inster second data point
 	spc1info.Blocks = 4
 	spc1info.Isread = false
 	stat.Latency = time.Millisecond
 	asumeter.Collect(stat)
-	tests.Assert(t, asumeter.read.blocks == 1)
-	tests.Assert(t, asumeter.write.blocks == 4)
-	tests.Assert(t, asumeter.total.blocks == 5)
+	tests.Assert(t, asumeter.Read.Blocks == 1)
+	tests.Assert(t, asumeter.Write.Blocks == 4)
+	tests.Assert(t, asumeter.Total.Blocks == 5)
 
 }
 
@@ -104,9 +104,9 @@ func TestAsuStatCsvDelta(t *testing.T) {
 
 	// Write
 	tests.Assert(t, split[4] == "2")                       // 1 io
-	tests.Assert(t, split[5] == fmt.Sprintf("%v", 4*KB*6)) // 6 4KB blocks
+	tests.Assert(t, split[5] == fmt.Sprintf("%v", 4*KB*6)) // 6 4KB Blocks
 
 	// Total
 	tests.Assert(t, split[8] == "3")
-	tests.Assert(t, split[9] == fmt.Sprintf("%v", 4*KB*7)) // 7 4KB blocks
+	tests.Assert(t, split[9] == fmt.Sprintf("%v", 4*KB*7)) // 7 4KB Blocks
 }

@@ -16,15 +16,14 @@
 package spc
 
 import (
-	"github.com/lpabon/tm"
 	"time"
 )
 
 type SpcStats struct {
-	total, read, write IoMeter
-
-	Asustats []*AsuStats
-	Latency  tm.TimeDuration
+	Total    IoMeter     `json:"total"`
+	Read     IoMeter     `json:"read"`
+	Write    IoMeter     `json:"write"`
+	Asustats []*AsuStats `json:"asu"`
 }
 
 // dataperiod in seconds is used to calculate MB/s
@@ -57,33 +56,42 @@ func (s *SpcStats) Collect(iostat *IoStats) {
 	// Save Asu stats
 	s.Asustats[iostat.Io.Asu-1].Collect(iostat)
 
-	// Collect total stats
-	s.total.Collect(iostat)
+	// Collect Total stats
+	s.Total.Collect(iostat)
 
 	if iostat.Io.Isread {
-		s.read.Collect(iostat)
+		s.Read.Collect(iostat)
 	} else {
-		s.write.Collect(iostat)
+		s.Write.Collect(iostat)
 	}
 }
 
+func (s *SpcStats) Csv(delta time.Duration) string {
+	return s.Read.Csv(delta) +
+		s.Write.Csv(delta) +
+		s.Total.Csv(delta) +
+		s.Asustats[0].Csv(delta) +
+		s.Asustats[1].Csv(delta) +
+		s.Asustats[2].Csv(delta)
+}
+
 func (s *SpcStats) CsvDelta(prev *SpcStats, delta time.Duration) string {
-	return s.read.CsvDelta(&prev.read, delta) +
-		s.write.CsvDelta(&prev.write, delta) +
-		s.total.CsvDelta(&prev.total, delta) +
+	return s.Read.CsvDelta(&prev.Read, delta) +
+		s.Write.CsvDelta(&prev.Write, delta) +
+		s.Total.CsvDelta(&prev.Total, delta) +
 		s.Asustats[0].CsvDelta(prev.Asustats[0], delta) +
 		s.Asustats[1].CsvDelta(prev.Asustats[1], delta) +
 		s.Asustats[2].CsvDelta(prev.Asustats[2], delta)
 }
 
 func (s *SpcStats) MeanLatencyDeltaUsecs(prev *SpcStats) float64 {
-	return s.total.MeanLatencyDeltaUsecs(&prev.total)
+	return s.Total.MeanLatencyDeltaUsecs(&prev.Total)
 }
 
 func (s *SpcStats) MeanLatencyUsecs() float64 {
-	return s.total.MeanLatencyUsecs()
+	return s.Total.MeanLatencyUsecs()
 }
 
 func (s *SpcStats) IosDelta(prev *SpcStats) uint64 {
-	return s.total.IosDelta(&prev.total)
+	return s.Total.IosDelta(&prev.Total)
 }

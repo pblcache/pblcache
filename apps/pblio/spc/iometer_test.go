@@ -43,17 +43,17 @@ func TestIoMeterCollect(t *testing.T) {
 	meter := &IoMeter{}
 
 	meter.Collect(stat)
-	tests.Assert(t, meter.blocks == 1)
-	tests.Assert(t, meter.ios == 1)
-	tests.Assert(t, meter.latency.MeanTimeUsecs() == 3000.0)
+	tests.Assert(t, meter.Blocks == 1)
+	tests.Assert(t, meter.Ios == 1)
+	tests.Assert(t, meter.Latency.MeanTimeUsecs() == 3000.0)
 
 	// Inster second data point
 	spc1info.Blocks = 4
 	stat.Latency = time.Millisecond
 	meter.Collect(stat)
-	tests.Assert(t, meter.blocks == 5)
-	tests.Assert(t, meter.ios == 2)
-	tests.Assert(t, meter.latency.MeanTimeUsecs() == 2000.0)
+	tests.Assert(t, meter.Blocks == 5)
+	tests.Assert(t, meter.Ios == 2)
+	tests.Assert(t, meter.Latency.MeanTimeUsecs() == 2000.0)
 
 }
 
@@ -76,9 +76,9 @@ func TestIoMeterCsvDelta(t *testing.T) {
 	meter := &IoMeter{}
 
 	meter.Collect(stat)
-	tests.Assert(t, meter.blocks == 1)
-	tests.Assert(t, meter.ios == 1)
-	tests.Assert(t, meter.latency.MeanTimeUsecs() == 3000.0)
+	tests.Assert(t, meter.Blocks == 1)
+	tests.Assert(t, meter.Ios == 1)
+	tests.Assert(t, meter.Latency.MeanTimeUsecs() == 3000.0)
 
 	prev := &IoMeter{}
 	s := meter.CsvDelta(prev, time.Millisecond)
@@ -92,22 +92,22 @@ func TestIoMeterCsvDelta(t *testing.T) {
 func TestIoMeterDeltas(t *testing.T) {
 
 	prev := &IoMeter{
-		ios:    1000,
-		blocks: 5000,
+		Ios:    1000,
+		Blocks: 5000,
 	}
-	prev.latency.Add(time.Millisecond)
-	prev.latency.Add(time.Millisecond)
-	prev.latency.Add(time.Millisecond)
-	prev.latency.Add(time.Millisecond)
+	prev.Latency.Add(time.Millisecond)
+	prev.Latency.Add(time.Millisecond)
+	prev.Latency.Add(time.Millisecond)
+	prev.Latency.Add(time.Millisecond)
 
 	meter := &IoMeter{}
 	*meter = *prev
-	meter.ios += 500
-	meter.blocks += 500
-	meter.latency.Add(time.Millisecond * 2)
-	meter.latency.Add(time.Millisecond * 2)
-	meter.latency.Add(time.Millisecond * 2)
-	meter.latency.Add(time.Millisecond * 2)
+	meter.Ios += 500
+	meter.Blocks += 500
+	meter.Latency.Add(time.Millisecond * 2)
+	meter.Latency.Add(time.Millisecond * 2)
+	meter.Latency.Add(time.Millisecond * 2)
+	meter.Latency.Add(time.Millisecond * 2)
 
 	// Test Accessors
 	tests.Assert(t, meter.MeanLatencyDeltaUsecs(prev) == 2000.0)
