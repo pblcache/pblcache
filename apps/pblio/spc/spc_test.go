@@ -25,27 +25,6 @@ import (
 	"time"
 )
 
-// We could use Fallocate, but some test CI systems
-// do not support it, like Travis-ci.org.
-func createfile(filename string, size int64) error {
-
-	buf := make([]byte, size)
-
-	// Create the file store some data
-	fp, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-
-	// Write the buffer
-	fp.Write(buf)
-
-	// Cleanup
-	fp.Close()
-
-	return nil
-}
-
 func TestNewSpcInfo(t *testing.T) {
 
 	var cache *cache.Cache
@@ -81,7 +60,7 @@ func TestSpcOpen(t *testing.T) {
 	tests.Assert(t, err != nil)
 
 	// Create the file and open it
-	err = createfile(tmpfile, 16*4*KB)
+	err = tests.CreateFile(tmpfile, 16*4*KB)
 	tests.Assert(t, err == nil)
 	defer os.Remove(tmpfile)
 

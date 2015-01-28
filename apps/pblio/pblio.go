@@ -47,7 +47,7 @@ const (
 var (
 	asu1, asu2, asu3         string
 	cachefilename, pbliodata string
-	runlen, cachesize        int
+	runlen                   int
 	blocksize, contexts      int
 	bsu, dataperiod          int
 	usedirectio, cpuprofile  bool
@@ -60,7 +60,6 @@ func init() {
 	flag.StringVar(&cachefilename, "cache", "", "\n\tCache file name")
 	flag.IntVar(&bsu, "bsu", 50, "\n\tNumber of BSUs (Business Scaling Units)."+
 		"\n\tEach BSU requires 50 IOPs from the back end storage")
-	flag.IntVar(&cachesize, "cachesize", 8, "\n\tCache size in GB")
 	flag.IntVar(&runlen, "runlen", 300, "\n\tBenchmark run time length in seconds")
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
 	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
@@ -110,12 +109,15 @@ func main() {
 	// Determine if we need to use the cache
 	if cachefilename != "" {
 		// Create log
-		log, logblocks = cache.NewLog(cachefilename,
-			uint64(cachesize*GB)/blocksize_bytes,
+		log, logblocks, err = cache.NewLog(cachefilename,
 			blocksize_bytes,
 			(512*KB)/blocksize_bytes,
 			0, // buffer cache has been removed for now
 		)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 
 		// Connect cache metadata with log
 		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
