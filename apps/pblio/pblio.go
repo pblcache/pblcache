@@ -32,9 +32,10 @@ import (
 
 // JSON Stats
 type PblioStats struct {
-	Spc   *spc.SpcStats     `json:"spc"`
-	Cache *cache.CacheStats `json:"cache,omitempty"`
-	Log   *cache.LogStats   `json:"log,omitempty"`
+	Timestamp int64             `json:"time"`
+	Spc       *spc.SpcStats     `json:"spc"`
+	Cache     *cache.CacheStats `json:"cache,omitempty"`
+	Log       *cache.LogStats   `json:"log,omitempty"`
 }
 
 const (
@@ -236,6 +237,7 @@ func main() {
 				}
 
 				// Save stats
+				pbliostats.Timestamp = time.Now().Unix()
 				jsonstats, err := json.Marshal(pbliostats)
 				if err != nil {
 					fmt.Println(err)
