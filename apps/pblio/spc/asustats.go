@@ -20,7 +20,9 @@ import (
 )
 
 type AsuStats struct {
-	total, read, write IoMeter
+	Total IoMeter `json:"total"`
+	Read  IoMeter `json:"read"`
+	Write IoMeter `json:"write"`
 }
 
 func NewAsuStats() *AsuStats {
@@ -28,16 +30,22 @@ func NewAsuStats() *AsuStats {
 }
 
 func (a *AsuStats) Collect(iostat *IoStats) {
-	a.total.Collect(iostat)
+	a.Total.Collect(iostat)
 	if iostat.Io.Isread {
-		a.read.Collect(iostat)
+		a.Read.Collect(iostat)
 	} else {
-		a.write.Collect(iostat)
+		a.Write.Collect(iostat)
 	}
 }
 
+func (a *AsuStats) Csv(delta time.Duration) string {
+	return a.Read.Csv(delta) +
+		a.Write.Csv(delta) +
+		a.Total.Csv(delta)
+}
+
 func (a *AsuStats) CsvDelta(prev *AsuStats, delta time.Duration) string {
-	return a.read.CsvDelta(&prev.read, delta) +
-		a.write.CsvDelta(&prev.write, delta) +
-		a.total.CsvDelta(&prev.total, delta)
+	return a.Read.CsvDelta(&prev.Read, delta) +
+		a.Write.CsvDelta(&prev.Write, delta) +
+		a.Total.CsvDelta(&prev.Total, delta)
 }

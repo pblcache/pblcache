@@ -18,6 +18,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/pblcache/pblcache/apps/pblio/spc"
@@ -28,6 +29,13 @@ import (
 	"sync"
 	"time"
 )
+
+// JSON Stats
+type PblioStats struct {
+	Spc   *spc.SpcStats     `json:"spc"`
+	Cache *cache.CacheStats `json:"cache,omitempty"`
+	Log   *cache.LogStats   `json:"log,omitempty"`
+}
 
 const (
 	KB = 1024
@@ -189,6 +197,8 @@ func main() {
 	// Used to collect all the stats
 	spcstats := spc.NewSpcStats()
 	prev_spcstats := spcstats.Copy()
+	pbliostats := &PblioStats{}
+	pbliostats.Spc = spcstats
 
 	// This goroutine will be used to collect the data
 	// from the io routines and print out to the console
@@ -202,11 +212,6 @@ func main() {
 		totaltime := start
 		totalios := uint64(0)
 		print_iops := time.After(time.Second * time.Duration(dataperiod))
-
-		var prev_stats *cache.CacheStats
-		if c != nil {
-			prev_stats = c.Stats()
-		}
 
 		for iostat := range iotime {
 
@@ -224,26 +229,18 @@ func main() {
 					"                                   \r",
 					ios, iops, spcstats.MeanLatencyDeltaUsecs(prev_spcstats)/1000)
 
-				// Save stats
+				// Get stats from the cache
 				if c != nil {
-					stats := c.Stats()
-					metrics.WriteString(
-						fmt.Sprintf("%d,"+ // Total time
-							"%v,", // Iops
-							int(end.Sub(totaltime).Seconds()),
-							iops) +
-							spcstats.CsvDelta(prev_spcstats, end.Sub(start)) +
-							stats.CsvDelta(prev_stats) +
-							"\n")
-					prev_stats = stats
+					pbliostats.Cache = c.Stats()
+					pbliostats.Log = log.Stats()
+				}
+
+				// Save stats
+				jsonstats, err := json.Marshal(pbliostats)
+				if err != nil {
+					fmt.Println(err)
 				} else {
-					metrics.WriteString(
-						fmt.Sprintf("%d,"+ // Total time
-							"%v,",
-							int(end.Sub(totaltime).Seconds()),
-							iops) +
-							spcstats.CsvDelta(prev_spcstats, end.Sub(start)) +
-							"\n")
+					metrics.WriteString(string(jsonstats) + "\n")
 				}
 
 				// Reset counters
@@ -258,7 +255,10 @@ func main() {
 
 		end := time.Now()
 		iops := float64(totalios) / end.Sub(totaltime).Seconds()
-		fmt.Printf("Avg IOPS:%.2f  Avg Latency:%.4f ms\n",
+
+		// Print final info
+		fmt.Printf("\tAvg IOPS:%.2f  Avg Latency:%.4f ms"+
+			"                        \n",
 			iops, spcstats.MeanLatencyUsecs()/1000)
 
 		fmt.Print("\n")

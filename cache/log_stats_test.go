@@ -185,8 +185,8 @@ func TestLogStatsJson(t *testing.T) {
 	tests.Assert(t, s.seg_skipped == decstats.Seg_skipped)
 	tests.Assert(t, s.bufferhits == decstats.Bufferhits)
 	tests.Assert(t, s.totalhits == decstats.Totalhits)
-	tests.Assert(t, s.readtime.MeanTimeUsecs() == decstats.Readtime)
-	tests.Assert(t, s.segmentreadtime.MeanTimeUsecs() == decstats.Segmentreadtime)
-	tests.Assert(t, s.writetime.MeanTimeUsecs() == decstats.Writetime)
+	tests.Assert(t, s.readtime.MeanTimeUsecs() == decstats.Readtime.MeanTimeUsecs())
+	tests.Assert(t, s.segmentreadtime.MeanTimeUsecs() == decstats.Segmentreadtime.MeanTimeUsecs())
+	tests.Assert(t, s.writetime.MeanTimeUsecs() == decstats.Writetime.MeanTimeUsecs())
 
 }
