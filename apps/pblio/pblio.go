@@ -274,7 +274,7 @@ func main() {
 		iops := float64(totalios) / end.Sub(totaltime).Seconds()
 
 		// Print final info
-		fmt.Printf("\tAvg IOPS:%.2f  Avg Latency:%.4f ms"+
+		fmt.Printf("Avg IOPS:%.2f  Avg Latency:%.4f ms"+
 			"                        \n",
 			iops, spcstats.MeanLatencyUsecs()/1000)
 

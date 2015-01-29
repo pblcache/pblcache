@@ -195,9 +195,15 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 
 	var iostreamwg sync.WaitGroup
 	for stream := 0; stream < streams; stream++ {
-		iostreamwg.Add(1)
-		iostreams[stream] = make(chan *IoStats, 32)
-		go s.sendio(&iostreamwg, iostreams[stream], iotime)
+
+		// Allow for queued requests
+		iostreams[stream] = make(chan *IoStats, 64)
+
+		// Create 32 io contexts per stream
+		for i := 0; i < 32; i++ {
+			iostreamwg.Add(1)
+			go s.sendio(&iostreamwg, iostreams[stream], iotime)
+		}
 	}
 
 	start := time.Now()
