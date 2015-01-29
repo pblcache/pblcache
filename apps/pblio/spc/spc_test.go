@@ -220,7 +220,8 @@ func TestSpcContext(t *testing.T) {
 	// Create context goroutine
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go s.Context(&wg, iotime, runlen, contexts)
+	quit := make(chan struct{})
+	go s.Context(&wg, iotime, quit, runlen, contexts)
 
 	// Create a go routine to get stats
 	// from channel
@@ -253,6 +254,100 @@ func TestSpcContext(t *testing.T) {
 	// These are quite big, but just in case a test framework
 	// is very busy
 	tests.Assert(t, end.Sub(teststart).Seconds() < 10)
+	tests.Assert(t, end.Sub(teststart).Seconds() > 1)
+
+	// Cleanup
+	s.Close()
+
+}
+
+func TestSpcContextQuit(t *testing.T) {
+
+	// initialize
+	var cache *cache.Cache
+	usedirectio := false
+	blocksize := 4 * KB
+	s := NewSpcInfo(cache, usedirectio, blocksize)
+
+	// Setup Mockfile
+	mockfile := tests.NewMockFile()
+	seeklen := int64(4 * 1024 * 1024 * 1024)
+	mockfile.MockSeek = func(offset int64, whence int) (int64, error) {
+		return seeklen, nil
+	}
+
+	// Mock openfile
+	defer tests.Patch(&openFile,
+		func(name string, flag int, perm os.FileMode) (Filer, error) {
+			return mockfile, nil
+		}).Restore()
+
+	// Open files
+	err := s.Open(1, "asu1file")
+	tests.Assert(t, err == nil)
+	err = s.Open(2, "asu2file")
+	tests.Assert(t, err == nil)
+	err = s.Open(3, "asu3file")
+	tests.Assert(t, err == nil)
+
+	// Initialize
+	bsu := 50
+	contexts := 1
+	err = s.Spc1Init(bsu, contexts)
+	tests.Assert(t, err == nil)
+
+	// Setup channel for Context() subroutines
+	// to send stats back
+	iotime := make(chan *IoStats)
+
+	// 60 secs, but we will send a quit signal
+	runlen := 60
+
+	teststart := time.Now()
+
+	// Create context goroutine
+	var wg sync.WaitGroup
+	wg.Add(1)
+	quit := make(chan struct{})
+	go s.Context(&wg, iotime, quit, runlen, contexts)
+
+	// Create a go routine to get stats
+	// from channel
+	var iostatwg sync.WaitGroup
+	iostatwg.Add(1)
+	go func() {
+		defer iostatwg.Done()
+
+		for iostat := range iotime {
+			if iostat == nil {
+				t.Error("iostat is nil")
+			}
+			if iostat.Io == nil {
+				t.Errorf("iostat return nil Io")
+			}
+			if iostat.Start.Before(teststart) {
+				t.Errorf("iostat returned a time in the past")
+			}
+		}
+	}()
+
+	// Wait a bit
+	time.Sleep(time.Second)
+
+	// Send the quit signal
+	close(quit)
+
+	// Wait here for Context() to finish
+	wg.Wait()
+	end := time.Now()
+
+	// Shutdown iotime channel reader
+	close(iotime)
+	iostatwg.Wait()
+
+	// These are quite big, but just in case a test framework
+	// is very busy
+	tests.Assert(t, end.Sub(teststart).Seconds() < 5)
 	tests.Assert(t, end.Sub(teststart).Seconds() > 1)
 
 	// Cleanup
