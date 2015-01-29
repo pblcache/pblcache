@@ -24,6 +24,7 @@ import (
 	"github.com/pblcache/pblcache/apps/pblio/spc"
 	"github.com/pblcache/pblcache/cache"
 	"os"
+	"os/signal"
 	"runtime/pprof"
 	"strings"
 	"sync"
@@ -203,11 +204,23 @@ func main() {
 		runlen)
 	fmt.Println("-----")
 
+	// Shutdown on signal
+	quit := make(chan struct{})
+	signalch := make(chan os.Signal, 1)
+	signal.Notify(signalch, os.Interrupt)
+	go func() {
+		select {
+		case <-signalch:
+			close(quit)
+			return
+		}
+	}()
+
 	// Spawn contexts coroutines
 	var wg sync.WaitGroup
 	for context := 0; context < contexts; context++ {
 		wg.Add(1)
-		go spcinfo.Context(&wg, iotime, runlen, context)
+		go spcinfo.Context(&wg, iotime, quit, runlen, context)
 	}
 
 	// Used to collect all the stats
