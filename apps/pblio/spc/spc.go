@@ -183,6 +183,7 @@ func (s *SpcInfo) Spc1Init(bsu, contexts int) error {
 // Create one of these per context set on Spc1Init()
 func (s *SpcInfo) Context(wg *sync.WaitGroup,
 	iotime chan<- *IoStats,
+	quit <-chan struct{},
 	runlen, context int) {
 
 	defer wg.Done()
@@ -212,6 +213,8 @@ func (s *SpcInfo) Context(wg *sync.WaitGroup,
 	ioloop := true
 	for ioloop {
 		select {
+		case <-quit:
+			ioloop = false
 		case <-stop:
 			ioloop = false
 		default:
