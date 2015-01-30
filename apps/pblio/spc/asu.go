@@ -20,6 +20,7 @@ import (
 	"github.com/lpabon/godbc"
 	"io"
 	"os"
+	"sync"
 	"syscall"
 )
 
@@ -105,24 +106,70 @@ func (a *Asu) Open(filename string) error {
 	return nil
 }
 
-func (a *Asu) ReadAt(b []byte, offset int64) (n int, err error) {
+func (a *Asu) ioAt(b []byte, offset int64, isread bool) (n int, err error) {
 	godbc.Require(a.fpsize != 0)
 
-	fp := int(offset / a.fpsize)
-	fp_off := int64(offset % a.fpsize)
-	godbc.Check(fp < len(a.fps), fp, len(a.fps))
+	// Head
+	head_fp := int(offset / a.fpsize)
+	head_fp_off := int64(offset % a.fpsize)
+	godbc.Check(head_fp < len(a.fps), head_fp, len(a.fps))
 
-	return a.fps[fp].ReadAt(b, fp_off)
+	// Tail
+	tail_fp := int((offset + int64(len(b))) / a.fpsize)
+	godbc.Check(tail_fp < len(a.fps), tail_fp, len(a.fps))
+
+	if head_fp == tail_fp {
+		if isread {
+			return a.fps[head_fp].ReadAt(b, head_fp_off)
+		} else {
+			return a.fps[head_fp].WriteAt(b, head_fp_off)
+		}
+	} else {
+		var (
+			wg                 sync.WaitGroup
+			head_n, tail_n     int
+			head_err, tail_err error
+		)
+		wg.Add(2)
+
+		// Read head
+		go func() {
+			defer wg.Done()
+			if isread {
+				head_n, head_err = a.fps[head_fp].ReadAt(b[:a.fpsize-head_fp_off], head_fp_off)
+			} else {
+				head_n, head_err = a.fps[head_fp].WriteAt(b[:a.fpsize-head_fp_off], head_fp_off)
+			}
+		}()
+
+		// Read tail
+		go func() {
+			defer wg.Done()
+			if isread {
+				tail_n, tail_err = a.fps[tail_fp].ReadAt(b[a.fpsize-head_fp_off:], 0)
+			} else {
+				tail_n, tail_err = a.fps[tail_fp].WriteAt(b[a.fpsize-head_fp_off:], 0)
+			}
+		}()
+
+		wg.Wait()
+
+		if head_err != nil {
+			return head_n, head_err
+		} else if tail_err != nil {
+			return tail_n, tail_err
+		} else {
+			return head_n + tail_n, nil
+		}
+	}
+}
+
+func (a *Asu) ReadAt(b []byte, offset int64) (n int, err error) {
+	return a.ioAt(b, offset, true)
 }
 
 func (a *Asu) WriteAt(b []byte, offset int64) (n int, err error) {
-	godbc.Require(a.fpsize != 0)
-
-	fp := int(offset / a.fpsize)
-	fp_off := int64(offset % a.fpsize)
-	godbc.Check(fp < len(a.fps), fp, len(a.fps))
-
-	return a.fps[fp].WriteAt(b, fp_off)
+	return a.ioAt(b, offset, false)
 }
 
 func (a *Asu) Close() {
