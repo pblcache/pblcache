@@ -17,7 +17,6 @@
 package cache
 
 import (
-	"compress/gzip"
 	"encoding/gob"
 	"errors"
 	"github.com/lpabon/godbc"
@@ -305,10 +304,7 @@ func (c *Cache) Save(filename string) error {
 	}
 	defer fi.Close()
 
-	fz := gzip.NewWriter(fi)
-	defer fz.Close()
-
-	encoder := gob.NewEncoder(fz)
+	encoder := gob.NewEncoder(fi)
 	err = encoder.Encode(cs)
 	if err != nil {
 		return err
@@ -329,13 +325,7 @@ func (c *Cache) Load(filename string) error {
 	}
 	defer fi.Close()
 
-	fz, err := gzip.NewReader(fi)
-	if err != nil {
-		return err
-	}
-	defer fz.Close()
-
-	decoder := gob.NewDecoder(fz)
+	decoder := gob.NewDecoder(fi)
 	err = decoder.Decode(&cs)
 	if err != nil {
 		return err

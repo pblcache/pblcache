@@ -68,7 +68,7 @@ func init() {
 	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
 	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
 	flag.StringVar(&pbliodata, "data", "pblio.data", "\n\tStats file in CSV format")
-	flag.IntVar(&dataperiod, "dataperiod", 5, "\n\tNumber of seconds per data collected and saved in the csv file")
+	flag.IntVar(&dataperiod, "dataperiod", 60, "\n\tNumber of seconds per data collected and saved in the csv file")
 }
 
 func main() {
@@ -115,7 +115,8 @@ func main() {
 		log, logblocks, err = cache.NewLog(cachefilename,
 			blocksize_bytes,
 			(512*KB)/blocksize_bytes,
-			0, // buffer cache has been removed for now
+			0,    // buffer cache has been removed for now
+			true, // Use DirectIO to SSD
 		)
 		if err != nil {
 			fmt.Println(err)

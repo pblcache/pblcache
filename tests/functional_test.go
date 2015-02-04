@@ -97,7 +97,8 @@ func TestSimpleCache(t *testing.T) {
 	log, actual_blocks, err := cache.NewLog(logfile,
 		blocksize,
 		blocks_per_segment,
-		bcsize)
+		bcsize,
+		false)
 	Assert(t, err == nil)
 	c := cache.NewCache(actual_blocks, blocksize, log.Msgchan)
 	defer os.Remove(logfile)

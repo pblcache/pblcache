@@ -43,7 +43,7 @@ func TestNewLog(t *testing.T) {
 		}).Restore()
 
 	// Simple log
-	l, blocks, err := NewLog("file", 4096, 4, 4096*2)
+	l, blocks, err := NewLog("file", 4096, 4, 4096*2, false)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == 16)
@@ -54,7 +54,7 @@ func TestNewLog(t *testing.T) {
 	// 17 blocks are not aligned to a segment with 4 blocks
 	// per segment
 	seeklen = 17 * 4096
-	l, blocks, err = NewLog("file", 4096, 4, 4096*2)
+	l, blocks, err = NewLog("file", 4096, 4, 4096*2, false)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == 16)
@@ -71,7 +71,7 @@ func TestWrapPut(t *testing.T) {
 	tests.Assert(t, nil == err)
 	defer os.Remove(testcachefile)
 
-	l, logblocks, err := NewLog(testcachefile, 4096, 2, 4096*2)
+	l, logblocks, err := NewLog(testcachefile, 4096, 2, 4096*2, false)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)
@@ -115,7 +115,8 @@ func TestReadCorrectness(t *testing.T) {
 	l, logblocks, err := NewLog(testcachefile,
 		bs,
 		blocks_per_segment,
-		buffercache)
+		buffercache,
+		false)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)
@@ -235,7 +236,8 @@ func TestLogConcurrency(t *testing.T) {
 	l, logblocks, err := NewLog(testcachefile,
 		bs,
 		blocks_per_segment,
-		buffercache)
+		buffercache,
+		false)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)

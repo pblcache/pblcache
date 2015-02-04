@@ -38,14 +38,11 @@ type Filer interface {
 }
 
 const (
-	KB = 1024
-	MB = 1024 * KB
-	GB = 1024 * MB
-	TB = 1024 * GB
-
-	fdirectio       = false
-	fsegmentbuffers = 32
-	fsegmentsize    = 1024
+	KB              = 1024
+	MB              = 1024 * KB
+	GB              = 1024 * MB
+	TB              = 1024 * GB
+	Segment_Buffers = 32
 )
 
 // Allows these functions to be mocked by tests
@@ -59,8 +56,8 @@ var (
 /*
 func init() {
 	// These values are set by the main program when it calls flag.Parse()
-	flag.BoolVar(&fdirectio, "iodb_directio", false, "\n\tUse DIRECTIO in iodb")
-	flag.IntVar(&fsegmentbuffers, "iodb_segmentbuffers", 32, "\n\tNumber of inflight buffers")
+	flag.BoolVar(&Use_DirectIO, "iodb_directio", false, "\n\tUse DIRECTIO in iodb")
+	flag.IntVar(&Segment_Buffers, "iodb_segmentbuffers", 32, "\n\tNumber of inflight buffers")
 	flag.IntVar(&fsegmentsize, "iodb_segmentsize", 1024, "\n\tSegment size in KB")
 }
 */
@@ -97,7 +94,9 @@ type Log struct {
 	//bc             buffercache.BufferCache
 }
 
-func NewLog(logfile string, blocksize, blocks_per_segment, bcsize uint64) (*Log, uint64, error) {
+func NewLog(logfile string,
+	blocksize, blocks_per_segment, bcsize uint64,
+	usedirectio bool) (*Log, uint64, error) {
 
 	var err error
 
@@ -109,7 +108,7 @@ func NewLog(logfile string, blocksize, blocks_per_segment, bcsize uint64) (*Log,
 	log.segmentsize = log.blocks_per_segment * log.blocksize
 
 	// For DirectIO
-	if fdirectio {
+	if usedirectio {
 		log.fp, err = openFile(logfile, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
 	} else {
 		log.fp, err = openFile(logfile, os.O_RDWR|os.O_EXCL, os.ModePerm)
@@ -139,10 +138,10 @@ func NewLog(logfile string, blocksize, blocks_per_segment, bcsize uint64) (*Log,
 	log.blocks = log.numsegments * log.blocks_per_segment
 
 	// Adjust the number of segment buffers
-	if log.numsegments < fsegmentbuffers {
+	if log.numsegments < Segment_Buffers {
 		log.segmentbuffers = int(log.numsegments)
 	} else {
-		log.segmentbuffers = fsegmentbuffers
+		log.segmentbuffers = Segment_Buffers
 	}
 
 	godbc.Check(log.numsegments != 0,
