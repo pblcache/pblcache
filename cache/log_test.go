@@ -75,6 +75,7 @@ func TestWrapPut(t *testing.T) {
 	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)
+	l.Start()
 
 	here := make(chan *message.Message)
 	wraps := uint64(4)
@@ -120,6 +121,7 @@ func TestReadCorrectness(t *testing.T) {
 	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)
+	l.Start()
 
 	here := make(chan *message.Message)
 
@@ -241,6 +243,7 @@ func TestLogConcurrency(t *testing.T) {
 	tests.Assert(t, err == nil)
 	tests.Assert(t, l != nil)
 	tests.Assert(t, blocks == logblocks)
+	l.Start()
 
 	here := make(chan *message.Message)
 

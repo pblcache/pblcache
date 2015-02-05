@@ -27,6 +27,7 @@ import (
 
 type CacheSave struct {
 	Cachemap          *CacheMapSave
+	Log               *LogSave
 	Addressmap        map[uint64]uint64
 	Blocks, Blocksize uint64
 }
@@ -287,16 +288,28 @@ func (c *Cache) StatsClear() {
 	c.stats.clear()
 }
 
-func (c *Cache) Save(filename string) error {
+func (c *Cache) Save(filename string, log *Log) error {
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	cs := &CacheSave{}
-	cs.Cachemap = c.cachemap.Save()
 	cs.Addressmap = c.addressmap
 	cs.Blocks = c.blocks
 	cs.Blocksize = c.blocksize
+
+	var err error
+	cs.Cachemap, err = c.cachemap.Save()
+	if err != nil {
+		return err
+	}
+
+	if log != nil {
+		cs.Log, err = log.Save()
+		if err != nil {
+			return err
+		}
+	}
 
 	fi, err := os.Create(filename)
 	if err != nil {
@@ -313,7 +326,7 @@ func (c *Cache) Save(filename string) error {
 	return nil
 }
 
-func (c *Cache) Load(filename string) error {
+func (c *Cache) Load(filename string, log *Log) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -331,7 +344,22 @@ func (c *Cache) Load(filename string) error {
 		return err
 	}
 
-	c.cachemap.Load(cs.Cachemap)
+	err = c.cachemap.Load(cs.Cachemap, cs.Addressmap)
+	if err != nil {
+		return err
+	}
+
+	if cs.Log == nil && log != nil {
+		return errors.New("No log metadata available")
+	} else if cs.Log != nil && log == nil {
+		return errors.New("Log unavaiable to apply loaded metadata")
+	} else if cs.Log != nil && log != nil {
+		err = log.Load(cs.Log, cs.Cachemap.Index)
+		if err != nil {
+			return err
+		}
+	}
+
 	c.addressmap = cs.Addressmap
 	c.blocks = cs.Blocks
 	c.blocksize = cs.Blocksize

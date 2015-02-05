@@ -127,13 +127,16 @@ func main() {
 		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
 		cache_state := "New"
 		if _, err = os.Stat(cachesavefile); err == nil {
-			err = c.Load(cachesavefile)
+			err = c.Load(cachesavefile, log)
 			if err != nil {
 				fmt.Printf("Unable to load metadata: %s", err)
 				return
 			}
 			cache_state = "Loaded"
 		}
+
+		// Start log goroutines
+		log.Start()
 
 		// Print banner
 		fmt.Printf("Cache   : %s (%s)\n"+
@@ -306,7 +309,7 @@ func main() {
 	if c != nil {
 		c.Close()
 		log.Close()
-		err = c.Save(cachesavefile)
+		err = c.Save(cachesavefile, log)
 		if err != nil {
 			fmt.Printf("Unable to save metadata: %s\n", err)
 			os.Remove(cachesavefile)

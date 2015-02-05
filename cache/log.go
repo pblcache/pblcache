@@ -53,14 +53,10 @@ var (
 	ErrLogTooSmall = errors.New("Log is too small")
 )
 
-/*
-func init() {
-	// These values are set by the main program when it calls flag.Parse()
-	flag.BoolVar(&Use_DirectIO, "iodb_directio", false, "\n\tUse DIRECTIO in iodb")
-	flag.IntVar(&Segment_Buffers, "iodb_segmentbuffers", 32, "\n\tNumber of inflight buffers")
-	flag.IntVar(&fsegmentsize, "iodb_segmentsize", 1024, "\n\tSegment size in KB")
+type LogSave struct {
+	Size    uint64
+	Wrapped bool
 }
-*/
 
 type IoSegment struct {
 	segmentbuf []byte
@@ -91,6 +87,7 @@ type Log struct {
 	Msgchan            chan *message.Message
 	quitchan           chan struct{}
 	logreaders         chan *message.Message
+	closed             bool
 	//bc             buffercache.BufferCache
 }
 
@@ -127,11 +124,11 @@ func NewLog(logfile string,
 		return nil, 0, ErrLogTooSmall
 	}
 
-	log.blocks = uint64(size) / blocksize
+	blocks := uint64(size) / blocksize
 
 	// We have to make sure that the number of blocks requested
 	// fit into the segments tracked by the log
-	log.numsegments = log.blocks / log.blocks_per_segment
+	log.numsegments = blocks / log.blocks_per_segment
 	log.size = log.numsegments * log.segmentsize
 
 	// maximum number of aligned blocks to segments
@@ -176,9 +173,6 @@ func NewLog(logfile string,
 		log.chreader <- &log.segments[i]
 	}
 
-	// Set up the first available segment
-	log.segment = <-log.chreader
-
 	godbc.Ensure(log.size != 0)
 	godbc.Ensure(log.blocksize == blocksize)
 	godbc.Ensure(log.Msgchan != nil)
@@ -186,21 +180,9 @@ func NewLog(logfile string,
 	godbc.Ensure(log.chavailable != nil)
 	godbc.Ensure(log.chreader != nil)
 	godbc.Ensure(log.segmentbuffers == len(log.segments))
-	godbc.Ensure(log.segmentbuffers-1 == len(log.chreader))
+	godbc.Ensure(log.segmentbuffers == len(log.chreader))
 	godbc.Ensure(0 == len(log.chavailable))
 	godbc.Ensure(0 == len(log.chwriting))
-	godbc.Ensure(nil != log.segment)
-
-	// Now that we are sure everything is clean,
-	// we can start the goroutines
-	for i := 0; i < 32; i++ {
-		log.wg.Add(1)
-		go log.logread()
-	}
-	go log.server()
-	go log.writer()
-	go log.reader()
-	log.wg.Add(3)
 
 	// Return the log object to the caller.
 	// Also return the maximum number of blocks, which may
@@ -460,6 +442,8 @@ func (c *Log) Close() {
 
 	// Close the storage
 	c.fp.Close()
+
+	c.closed = true
 }
 
 func (c *Log) String() string {
@@ -470,4 +454,62 @@ func (c *Log) String() string {
 
 func (c *Log) Stats() *LogStats {
 	return c.stats.Stats()
+}
+
+// MUST call Close() before calling this functoin
+func (l *Log) Save() (*LogSave, error) {
+	godbc.Require(l.closed)
+
+	ls := &LogSave{}
+
+	ls.Size = l.size
+	ls.Wrapped = l.wrapped
+
+	return ls, nil
+}
+
+func (l *Log) Load(ls *LogSave, blocknum uint64) error {
+	if ls.Size != l.size {
+		return errors.New("Loaded log metadata does not equal to current state")
+	}
+
+	l.wrapped = ls.Wrapped
+
+	segment := uint64(blocknum / l.blocks_per_segment)
+	l.current = segment * l.segmentsize
+
+	return nil
+}
+
+func (l *Log) Start() {
+	godbc.Require(l.size != 0)
+	godbc.Require(l.Msgchan != nil)
+	godbc.Require(l.chwriting != nil)
+	godbc.Require(l.chavailable != nil)
+	godbc.Require(l.chreader != nil)
+	godbc.Require(l.segmentbuffers == len(l.segments))
+	godbc.Require(l.segmentbuffers == len(l.chreader))
+	godbc.Require(0 == len(l.chavailable))
+	godbc.Require(0 == len(l.chwriting))
+
+	// Set up the first available segment
+	l.segment = <-l.chreader
+	l.segment.offset = l.current
+	if l.wrapped {
+		l.segments[0].offset = l.current
+		n, err := l.fp.ReadAt(l.segments[0].segmentbuf, int64(l.segments[0].offset))
+		godbc.Check(n == len(l.segments[0].segmentbuf), n)
+		godbc.Check(err == nil)
+	}
+
+	// Now that we are sure everything is clean,
+	// we can start the goroutines
+	for i := 0; i < 32; i++ {
+		l.wg.Add(1)
+		go l.logread()
+	}
+	go l.server()
+	go l.writer()
+	go l.reader()
+	l.wg.Add(3)
 }

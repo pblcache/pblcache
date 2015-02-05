@@ -421,14 +421,14 @@ func TestCacheMultiblock(t *testing.T) {
 	// Save the cache metadata
 	save := tests.Tempfile()
 	defer os.Remove(save)
-	err = c.Save(save)
+	err = c.Save(save, nil)
 	tests.Assert(t, err == nil)
 
 	c.Close()
 	c = NewCache(8, 4096, pipe.In)
 	tests.Assert(t, c != nil)
 
-	err = c.Load(save)
+	err = c.Load(save, nil)
 	tests.Assert(t, err == nil)
 
 	// Get data again.

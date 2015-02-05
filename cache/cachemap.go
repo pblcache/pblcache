@@ -17,6 +17,7 @@
 package cache
 
 import (
+	"errors"
 	"github.com/lpabon/godbc"
 )
 
@@ -31,9 +32,8 @@ type BlockDescriptor struct {
 }
 
 type CacheMapSave struct {
-	Bds   []BlockDescriptor
-	Size  uint64
 	Index uint64
+	Size  uint64
 }
 
 type CacheMap struct {
@@ -103,17 +103,26 @@ func (c *CacheMap) Free(index uint64) {
 	c.bds[index].Key = INVALID_KEY
 }
 
-func (c *CacheMap) Save() *CacheMapSave {
-	cs := &CacheMapSave{}
-	cs.Bds = c.bds
-	cs.Index = c.index
-	cs.Size = c.size
+func (c *CacheMap) Save() (*CacheMapSave, error) {
+	cms := &CacheMapSave{}
+	cms.Index = c.index
+	cms.Size = c.size
 
-	return cs
+	return cms, nil
 }
 
-func (c *CacheMap) Load(cs *CacheMapSave) {
-	c.bds = cs.Bds
-	c.index = cs.Index
-	c.size = cs.Size
+func (c *CacheMap) Load(cms *CacheMapSave, addressmap map[uint64]uint64) error {
+
+	if cms.Size != c.size {
+		return errors.New("Loaded metadata cache map size is not equal to the current cache map size")
+	}
+
+	for key, index := range addressmap {
+		c.bds[index].Used = true
+		c.bds[index].Key = key
+	}
+
+	c.index = cms.Index
+
+	return nil
 }
