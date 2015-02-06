@@ -68,7 +68,7 @@ func init() {
 	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
 	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
 	flag.StringVar(&pbliodata, "data", "pblio.data", "\n\tStats file in CSV format")
-	flag.IntVar(&dataperiod, "dataperiod", 5, "\n\tNumber of seconds per data collected and saved in the csv file")
+	flag.IntVar(&dataperiod, "dataperiod", 60, "\n\tNumber of seconds per data collected and saved in the csv file")
 }
 
 func main() {
@@ -115,7 +115,8 @@ func main() {
 		log, logblocks, err = cache.NewLog(cachefilename,
 			blocksize_bytes,
 			(512*KB)/blocksize_bytes,
-			0, // buffer cache has been removed for now
+			0,    // buffer cache has been removed for now
+			true, // Use DirectIO to SSD
 		)
 		if err != nil {
 			fmt.Println(err)
@@ -126,13 +127,16 @@ func main() {
 		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
 		cache_state := "New"
 		if _, err = os.Stat(cachesavefile); err == nil {
-			err = c.Load(cachesavefile)
+			err = c.Load(cachesavefile, log)
 			if err != nil {
 				fmt.Printf("Unable to load metadata: %s", err)
 				return
 			}
 			cache_state = "Loaded"
 		}
+
+		// Start log goroutines
+		log.Start()
 
 		// Print banner
 		fmt.Printf("Cache   : %s (%s)\n"+
@@ -305,7 +309,7 @@ func main() {
 	if c != nil {
 		c.Close()
 		log.Close()
-		err = c.Save(cachesavefile)
+		err = c.Save(cachesavefile, log)
 		if err != nil {
 			fmt.Printf("Unable to save metadata: %s\n", err)
 			os.Remove(cachesavefile)

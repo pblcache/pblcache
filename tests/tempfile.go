@@ -29,10 +29,11 @@ func tempfile_generate() func() string {
 	}
 }
 
+var genname = tempfile_generate()
+
 // Return a filename string in the form of
 // /tmp/pblcache_test.<Process Id>-<Counter>
 func Tempfile() string {
-	genname := tempfile_generate()
 	return genname()
 }
 

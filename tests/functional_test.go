@@ -83,25 +83,8 @@ func response_handler(t *testing.T,
 	Assert(t, errors == 0)
 }
 
-func TestSimpleCache(t *testing.T) {
-	logsize := uint64(100 * cache.MB)
-	blocksize := uint64(4 * cache.KB)
-	blocks := uint64(logsize / blocksize)
-	blocks_per_segment := uint64(32)
-	bcsize := uint64(1 * cache.MB)
-
-	logfile := Tempfile()
-	err := CreateFile(logfile, int64(blocks*blocksize))
-	Assert(t, err == nil)
-
-	log, actual_blocks, err := cache.NewLog(logfile,
-		blocksize,
-		blocks_per_segment,
-		bcsize)
-	Assert(t, err == nil)
-	c := cache.NewCache(actual_blocks, blocksize, log.Msgchan)
-	defer os.Remove(logfile)
-
+func cacheio(t *testing.T, c *cache.Cache, log *cache.Log,
+	actual_blocks, blocksize uint64) {
 	var wgIo, wgRet sync.WaitGroup
 
 	// Start up response server
@@ -141,8 +124,7 @@ func TestSimpleCache(t *testing.T) {
 					c.Invalidate(iopkt)
 
 					// Simulate waiting for storage device to write data
-					// anywhere from 100usecs to 10ms
-					time.Sleep(time.Microsecond * time.Duration((r.Intn(10000) + 100)))
+					time.Sleep(time.Microsecond * time.Duration((r.Intn(100))))
 
 					// Now, we can do a put
 					msg = message.NewMsgPut()
@@ -175,8 +157,7 @@ func TestSimpleCache(t *testing.T) {
 				// Send request
 
 				// Simulate waiting for more work by sleeping
-				// anywhere from 100usecs to 10ms
-				time.Sleep(time.Microsecond * time.Duration((r.Intn(10000) + 100)))
+				time.Sleep(time.Microsecond * time.Duration((r.Intn(100))))
 			}
 		}()
 
@@ -197,10 +178,61 @@ func TestSimpleCache(t *testing.T) {
 	c.Close()
 	log.Close()
 
+	stats := log.Stats()
+	Assert(t, stats.Seg_skipped == 0)
+
 	// Send receiver a message that all clients have shut down
 	close(returnch)
 
 	// Wait for receiver to finish emptying its channel
 	wgRet.Wait()
 
+}
+
+func TestSimpleCache(t *testing.T) {
+	logsize := uint64(100 * cache.MB)
+	blocksize := uint64(4 * cache.KB)
+	blocks := uint64(logsize / blocksize)
+	blocks_per_segment := uint64(32)
+	bcsize := uint64(1 * cache.MB)
+
+	logfile := Tempfile()
+	err := CreateFile(logfile, int64(blocks*blocksize))
+	Assert(t, err == nil)
+
+	log, actual_blocks, err := cache.NewLog(logfile,
+		blocksize,
+		blocks_per_segment,
+		bcsize,
+		false)
+	Assert(t, err == nil)
+	c := cache.NewCache(actual_blocks, blocksize, log.Msgchan)
+	defer os.Remove(logfile)
+	log.Start()
+
+	// Start test
+	fmt.Println("----> Initial test")
+	cacheio(t, c, log, actual_blocks, blocksize)
+
+	// Save cache metadata
+	fmt.Println("----> Saving metadata")
+	save := Tempfile()
+	defer os.Remove(save)
+	err = c.Save(save, log)
+	Assert(t, err == nil)
+
+	// Run it again but now load the cache.
+	log, actual_blocks, err = cache.NewLog(logfile,
+		blocksize,
+		blocks_per_segment,
+		bcsize,
+		false)
+	Assert(t, err == nil)
+	c = cache.NewCache(actual_blocks, blocksize, log.Msgchan)
+	c.Load(save, log)
+	log.Start()
+
+	// Start test
+	fmt.Println("----> Second pass")
+	cacheio(t, c, log, actual_blocks, blocksize)
 }
