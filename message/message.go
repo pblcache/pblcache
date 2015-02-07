@@ -31,15 +31,8 @@ var (
 )
 
 const (
-	MsgStart MsgType = iota + 1
-	MsgStop
-	MsgShutdown
-	MsgPut
+	MsgPut MsgType = iota + 1
 	MsgGet
-	MsgStats
-	MsgObjCreate
-	MsgObjGet
-	MsgObjDelete
 )
 
 type MessageStats struct {

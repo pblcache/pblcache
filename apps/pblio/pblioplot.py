@@ -41,7 +41,6 @@ data_sources = ['DS:tlat_d:COUNTER:600:0:U',
 				'DS:cache_reads:COUNTER:600:0:U',
 				'DS:cache_ihits:COUNTER:600:0:U',
 				'DS:cache_invals:COUNTER:600:0:U',
-				'DS:cache_items:GAUGE:600:0:U',
 				'DS:reads:COUNTER:600:0:U',
 				'DS:total:COUNTER:600:0:U',
 				'DS:asu1_rl_d:COUNTER:600:0:U',
@@ -55,13 +54,11 @@ rrdtool.create('pblio.rrd',
 	'--start', "%d" % (jsondata['time']-Period),
 	'--step', '%d' % (Period),
 	data_sources,
-	'RRA:LAST:0.5:10:2600',
-	'RRA:AVERAGE:0.5:10:2600',
+	'RRA:LAST:0.5:1:2600',
 	'RRA:LAST:0.5:20:2600')
 
 # Open JSON data file
 fp = open('pblio.data', 'r')
-csv = open('pblio.csv', 'w')
 
 # Cover data
 start_time=jsondata['time']
@@ -97,7 +94,6 @@ for line in fp.readlines():
 		cache_invals = stat['cache']['invalidations']
 		cache_insertions = stat['cache']['insertions']
 		cache_evictions = stat['cache']['evictions']
-		cache_items = cache_insertions-cache_evictions-cache_ihits
 	except:
 		cache_hits = 0
 		cache_reads = 0
@@ -105,7 +101,6 @@ for line in fp.readlines():
 		cache_invals = 0
 		cache_insertions = 0
 		cache_evictions = 0
-		cache_items = 0
 
 	# Enter into rrd
 	rrdtool.update('pblio.rrd',
@@ -122,7 +117,6 @@ for line in fp.readlines():
 		("%d:" % cache_reads)+
 		("%d:" % cache_ihits)+
 		("%d:" % cache_invals)+
-		("%d:" % cache_items)+
 		("%d:" % reads)+
 		("%d:" % total)+
 		("%d:" % asu1_rl_d)+
@@ -199,24 +193,13 @@ rrdtool.graph('readp.png',
 	'CDEF:readp=reads,total,/,100,*',
 	'LINE2:readp#FF0000:Read Percentage')
 
-# Graph items in cache
-rrdtool.graph('items.png',
-	'--start', '%d' % start_time,
-	'--end', '%d' % end_time,
-	'-w 800',
-	'-h 400',
-	'--vertical-label=Gygabytes',
-	'DEF:items=pblio.rrd:cache_items:AVERAGE',
-	'CDEF:gitems=items,4,*,1024,/,1024,/',
-	'LINE2:gitems#00FF00:G items')
-
 # Graph cache I/O
 rrdtool.graph('insertions.png',
 	'--start', '%d' % start_time,
 	'--end', '%d' % end_time,
 	'-w 800',
 	'-h 400',
-	'--vertical-label=Count',
+	'--vertical-label=Number of Blocks',
 	'DEF:evictions=pblio.rrd:cache_evictions:LAST',
 	'DEF:insertions=pblio.rrd:cache_insertions:LAST',
 	'DEF:invalidatehits=pblio.rrd:cache_ihits:LAST',
