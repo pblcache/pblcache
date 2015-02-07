@@ -180,7 +180,7 @@ func TestMessageDone(t *testing.T) {
 	backhere := make(chan *Message)
 
 	m := &Message{
-		Type:    MsgShutdown,
+		Type:    MsgPut,
 		RetChan: backhere,
 
 		// Create some private data
@@ -197,7 +197,7 @@ func TestMessageDone(t *testing.T) {
 		// Wait for work
 		msg := <-worker
 		d := msg.Priv.(*Data)
-		tests.Assert(t, msg.Type == MsgShutdown)
+		tests.Assert(t, msg.Type == MsgPut)
 		tests.Assert(t, d.i == 1)
 
 		// Increment the offset here to test

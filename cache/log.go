@@ -17,9 +17,8 @@
 package cache
 
 import (
-	"fmt"
-	//"github.com/lpabon/buffercache"
 	"errors"
+	"fmt"
 	"github.com/lpabon/bufferio"
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
@@ -88,7 +87,6 @@ type Log struct {
 	quitchan           chan struct{}
 	logreaders         chan *message.Message
 	closed             bool
-	//bc             buffercache.BufferCache
 }
 
 func NewLog(logfile string,
@@ -145,9 +143,6 @@ func NewLog(logfile string,
 		fmt.Sprintf("bs:%v ssize:%v sbuffers:%v blocks:%v max:%v ns:%v size:%v\n",
 			log.blocksize, log.segmentsize, log.segmentbuffers, log.blocks,
 			log.blocks_per_segment, log.numsegments, log.size))
-
-	// Create buffer cache
-	//log.bc = buffercache.NewClockCache(bcsize, log.blocksize)
 
 	// Incoming message channel
 	log.Msgchan = make(chan *message.Message, 32)
@@ -339,9 +334,6 @@ func (c *Log) put(msg *message.Message) error {
 	// get log offset
 	offset := c.offset(iopkt.BlockNum)
 
-	// Buffer cache is a Read-miss cache
-	//c.bc.Invalidate(iopkt.BlockNum)
-
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
 	godbc.Check(n == len(iopkt.Buffer))
@@ -363,15 +355,6 @@ func (c *Log) get(msg *message.Message) error {
 	defer msg.Done()
 	iopkt := msg.IoPkt()
 
-	/*
-		err = c.bc.Get(iopkt.BlockNum, iopkt.Buffer)
-		if err == nil {
-			c.stats.BufferHit()
-			msg.Done()
-			return nil
-		}
-	*/
-
 	var readmsg *message.Message
 	orig_nblocks := iopkt.Nblocks
 	for block := 0; block < iopkt.Nblocks; block++ {
@@ -392,9 +375,6 @@ func (c *Log) get(msg *message.Message) error {
 				godbc.Check(err == nil, err, block, offset, i)
 				godbc.Check(uint64(n) == c.blocksize)
 				c.stats.RamHit()
-
-				// Save in buffer cache
-				//c.bc.Set(iopkt.BlockNum, iopkt.Buffer)
 			}
 			c.segments[i].lock.RUnlock()
 		}
