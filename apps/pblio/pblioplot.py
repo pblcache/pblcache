@@ -35,12 +35,19 @@ data_sources = ['DS:tlat_d:COUNTER:600:0:U',
 				'DS:treadlat_c:COUNTER:600:0:U',
 				'DS:twritelat_d:COUNTER:600:0:U',
 				'DS:twritelat_c:COUNTER:600:0:U',
+				'DS:cache_insertions:COUNTER:600:0:U',
+				'DS:cache_evictions:COUNTER:600:0:U',
 				'DS:cache_hits:COUNTER:600:0:U',
 				'DS:cache_reads:COUNTER:600:0:U',
 				'DS:cache_ihits:COUNTER:600:0:U',
 				'DS:cache_invals:COUNTER:600:0:U',
+				'DS:cache_items:GAUGE:600:0:U',
 				'DS:reads:COUNTER:600:0:U',
 				'DS:total:COUNTER:600:0:U',
+				'DS:asu1_rl_d:COUNTER:600:0:U',
+				'DS:asu1_rl_c:COUNTER:600:0:U',
+				'DS:asu2_rl_d:COUNTER:600:0:U',
+				'DS:asu2_rl_c:COUNTER:600:0:U',
 				]
 
 # Create db
@@ -48,9 +55,8 @@ rrdtool.create('pblio.rrd',
 	'--start', "%d" % (jsondata['time']-Period),
 	'--step', '%d' % (Period),
 	data_sources,
-	'RRA:LAST:0.5:1:2600',
-	'RRA:LAST:0.5:5:2600',
 	'RRA:LAST:0.5:10:2600',
+	'RRA:AVERAGE:0.5:10:2600',
 	'RRA:LAST:0.5:20:2600')
 
 # Open JSON data file
@@ -60,6 +66,7 @@ csv = open('pblio.csv', 'w')
 # Cover data
 start_time=jsondata['time']
 end_time=0
+cache_items=0
 for line in fp.readlines():
 	stat = json.loads(line)
 
@@ -76,17 +83,29 @@ for line in fp.readlines():
 	reads = stat['spc']['asu'][0]['read']['blocks'] + stat['spc']['asu'][1]['read']['blocks']
 	total = stat['spc']['asu'][0]['total']['blocks'] + stat['spc']['asu'][1]['total']['blocks']
 
+	asu1_rl_d = int(stat['spc']['asu'][0]['read']['latency']['duration']/1000)
+	asu1_rl_c = stat['spc']['asu'][0]['read']['latency']['count']
+
+	asu2_rl_d = int(stat['spc']['asu'][1]['read']['latency']['duration']/1000)
+	asu2_rl_c = stat['spc']['asu'][1]['read']['latency']['count']
+
 	# Get cache
 	try:
 		cache_hits = stat['cache']['readhits']
 		cache_reads = stat['cache']['reads']
 		cache_ihits = stat['cache']['invalidatehits']
 		cache_invals = stat['cache']['invalidations']
+		cache_insertions = stat['cache']['insertions']
+		cache_evictions = stat['cache']['evictions']
+		cache_items = cache_insertions-cache_evictions-cache_ihits
 	except:
 		cache_hits = 0
 		cache_reads = 0
 		cache_ihits = 0
 		cache_invals = 0
+		cache_insertions = 0
+		cache_evictions = 0
+		cache_items = 0
 
 	# Enter into rrd
 	rrdtool.update('pblio.rrd',
@@ -97,12 +116,19 @@ for line in fp.readlines():
 		("%d:" % treadlat_c)+
 		("%d:" % twritelat_d)+
 		("%d:" % twritelat_c)+
+		("%d:" % cache_insertions)+
+		("%d:" % cache_evictions)+
 		("%d:" % cache_hits)+
 		("%d:" % cache_reads)+
 		("%d:" % cache_ihits)+
 		("%d:" % cache_invals)+
+		("%d:" % cache_items)+
 		("%d:" % reads)+
-		("%d" % total))
+		("%d:" % total)+
+		("%d:" % asu1_rl_d)+
+		("%d:" % asu1_rl_c)+
+		("%d:" % asu2_rl_d)+
+		("%d" % asu2_rl_c))
 
 	# Save the end time for graphs
 	end_time = stat['time']
@@ -128,6 +154,22 @@ rrdtool.graph('tlat.png',
 	'LINE2:latms#FF0000:Total Latency',
 	'LINE2:readlatms#00FF00:Read Total Latency',
 	'LINE2:writelatms#0000FF:Write Total Latency')
+
+# Graph ASU1 and ASU2 Read Latency
+rrdtool.graph('asu_read_latency.png',
+	'--start', '%d' % start_time,
+	'--end', '%d' % end_time,
+	'-w 800',
+	'-h 400',
+	'--vertical-label=Time (ms)',
+	'DEF:asu1d=pblio.rrd:asu1_rl_d:LAST',
+	'DEF:asu1c=pblio.rrd:asu1_rl_c:LAST',
+	'DEF:asu2d=pblio.rrd:asu2_rl_d:LAST',
+	'DEF:asu2c=pblio.rrd:asu2_rl_c:LAST',
+	'CDEF:asu1l=asu1d,asu1c,/,1000,/',
+	'CDEF:asu2l=asu2d,asu2c,/,1000,/',
+	'LINE2:asu1l#FF0000:ASU1 Read Latency',
+	'LINE2:asu2l#00FF00:ASU2 Read Latency')
 
 # Graph Read Hit Rate
 rrdtool.graph('readhit.png',
@@ -156,6 +198,31 @@ rrdtool.graph('readp.png',
 	'DEF:reads=pblio.rrd:reads:LAST',
 	'CDEF:readp=reads,total,/,100,*',
 	'LINE2:readp#FF0000:Read Percentage')
+
+# Graph items in cache
+rrdtool.graph('items.png',
+	'--start', '%d' % start_time,
+	'--end', '%d' % end_time,
+	'-w 800',
+	'-h 400',
+	'--vertical-label=Gygabytes',
+	'DEF:items=pblio.rrd:cache_items:AVERAGE',
+	'CDEF:gitems=items,4,*,1024,/,1024,/',
+	'LINE2:gitems#00FF00:G items')
+
+# Graph cache I/O
+rrdtool.graph('insertions.png',
+	'--start', '%d' % start_time,
+	'--end', '%d' % end_time,
+	'-w 800',
+	'-h 400',
+	'--vertical-label=Count',
+	'DEF:evictions=pblio.rrd:cache_evictions:LAST',
+	'DEF:insertions=pblio.rrd:cache_insertions:LAST',
+	'DEF:invalidatehits=pblio.rrd:cache_ihits:LAST',
+	'LINE2:insertions#0FFF00:Insertions',
+	'LINE2:invalidatehits#000FFF:Invalidation Hits',
+	'LINE2:evictions#FFF000:Evictions')
 
 print "Start Time = %d" % (start_time)
 print "End Time = %d" % (end_time)
