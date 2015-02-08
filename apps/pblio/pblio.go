@@ -250,13 +250,13 @@ func main() {
 
 			// Save stats
 			spcstats.Collect(iostat)
+			totalios += 1
 
 			// Do this every few seconds
 			select {
 			case <-print_iops:
 				end := time.Now()
 				ios := spcstats.IosDelta(prev_spcstats)
-				totalios += ios
 				iops := float64(ios) / end.Sub(start).Seconds()
 				fmt.Printf("ios:%v IOPS:%.2f Latency:%.4f ms"+
 					"                                   \r",
