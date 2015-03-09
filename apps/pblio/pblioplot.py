@@ -222,5 +222,19 @@ rrdtool.graph('insertions.png',
     'LINE2:invalidatehits#000FFF:Invalidation Hits',
     'LINE2:evictions#FFF000:Evictions')
 
+# Storage IOPS Reduction
+rrdtool.graph('iops_reduction.png',
+    '--start', '%d' % start_time,
+    '--end', '%d' % end_time,
+    '-w 800',
+    '-h 400',
+    '--title=Storage System Total IOPS Reduction',
+    '--vertical-label=Percentage',
+    'DEF:writes=pblio.rrd:cache_invals:LAST',
+    'DEF:reads=pblio.rrd:cache_reads:LAST',
+    'DEF:readhits=pblio.rrd:cache_hits:LAST',
+    'CDEF:reduction=readhits,reads,writes,+,/,100,*',
+    'LINE2:reduction#FF0000:Total IOPS Reduction Percentage')
+
 print "Start Time = %d" % (start_time)
 print "End Time = %d" % (end_time)
