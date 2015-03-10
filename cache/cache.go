@@ -26,7 +26,7 @@ import (
 )
 
 type CacheSave struct {
-	Cachemap          *CacheMapSave
+	Cachemap          *BlockDescriptorArraySave
 	Log               *LogSave
 	Addressmap        map[uint64]uint64
 	Blocks, Blocksize uint64
@@ -34,7 +34,7 @@ type CacheSave struct {
 
 type Cache struct {
 	stats             *cachestats
-	cachemap          *CacheMap
+	bda          *BlockDescriptorArray
 	addressmap        map[uint64]uint64
 	blocks, blocksize uint64
 	pipeline          chan *message.Message
@@ -63,11 +63,11 @@ func NewCache(blocks, blocksize uint64, pipeline chan *message.Message) *Cache {
 	cache.blocksize = blocksize
 
 	cache.stats = &cachestats{}
-	cache.cachemap = NewCacheMap(cache.blocks)
+	cache.bda = NewBlockDescriptorArray(cache.blocks)
 	cache.addressmap = make(map[uint64]uint64)
 
 	godbc.Ensure(cache.blocks > 0)
-	godbc.Ensure(cache.cachemap != nil)
+	godbc.Ensure(cache.bda != nil)
 	godbc.Ensure(cache.addressmap != nil)
 	godbc.Ensure(cache.stats != nil)
 
@@ -236,7 +236,7 @@ func (c *Cache) invalidate(key uint64) bool {
 	if index, ok := c.addressmap[key]; ok {
 		c.stats.invalidateHit()
 
-		c.cachemap.Free(index)
+		c.bda.Free(index)
 		delete(c.addressmap, key)
 
 		return true
@@ -254,7 +254,7 @@ func (c *Cache) put(key uint64) (index uint64) {
 
 	c.stats.insertion()
 
-	if index, evictkey, evict = c.cachemap.Insert(key); evict {
+	if index, evictkey, evict = c.bda.Insert(key); evict {
 		c.stats.eviction()
 		delete(c.addressmap, evictkey)
 	}
@@ -270,7 +270,7 @@ func (c *Cache) get(key uint64) (index uint64, ok bool) {
 
 	if index, ok = c.addressmap[key]; ok {
 		c.stats.readHit()
-		c.cachemap.Using(index)
+		c.bda.Using(index)
 	}
 
 	return
@@ -299,7 +299,7 @@ func (c *Cache) Save(filename string, log *Log) error {
 	cs.Blocksize = c.blocksize
 
 	var err error
-	cs.Cachemap, err = c.cachemap.Save()
+	cs.Cachemap, err = c.bda.Save()
 	if err != nil {
 		return err
 	}
@@ -344,7 +344,7 @@ func (c *Cache) Load(filename string, log *Log) error {
 		return err
 	}
 
-	err = c.cachemap.Load(cs.Cachemap, cs.Addressmap)
+	err = c.bda.Load(cs.Cachemap, cs.Addressmap)
 	if err != nil {
 		return err
 	}

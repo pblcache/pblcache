@@ -26,27 +26,27 @@ const (
 )
 
 type BlockDescriptor struct {
-	Key  uint64
-	Mru  bool
-	Used bool
+	key       uint64
+	clock_set bool
+	used      bool
 }
 
-type CacheMapSave struct {
+type BlockDescriptorArraySave struct {
 	Index uint64
 	Size  uint64
 }
 
-type CacheMap struct {
+type BlockDescriptorArray struct {
 	bds   []BlockDescriptor
 	size  uint64
 	index uint64
 }
 
-func NewCacheMap(blocks uint64) *CacheMap {
+func NewBlockDescriptorArray(blocks uint64) *BlockDescriptorArray {
 
 	godbc.Require(blocks > 0)
 
-	c := &CacheMap{}
+	c := &BlockDescriptorArray{}
 
 	c.size = blocks
 	c.bds = make([]BlockDescriptor, blocks)
@@ -54,7 +54,7 @@ func NewCacheMap(blocks uint64) *CacheMap {
 	return c
 }
 
-func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
+func (c *BlockDescriptorArray) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
 	for {
 
 		// Use the current index to check the current entry
@@ -62,13 +62,13 @@ func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
 			entry := &c.bds[c.index]
 
 			// CLOCK: If it has been used recently, then do not evict
-			if entry.Mru {
-				entry.Mru = false
+			if entry.clock_set {
+				entry.clock_set = false
 			} else {
 
 				// If it is in use, then we need to evict the older key
-				if entry.Used {
-					evictkey = entry.Key
+				if entry.used {
+					evictkey = entry.key
 					evict = true
 				} else {
 					evictkey = INVALID_KEY
@@ -79,9 +79,9 @@ func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
 				newindex = c.index
 
 				// Setup current cachemap entry
-				entry.Key = key
-				entry.Mru = false
-				entry.Used = true
+				entry.key = key
+				entry.clock_set = false
+				entry.used = true
 
 				// Set index to next cachemap entry
 				c.index++
@@ -93,33 +93,33 @@ func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
 	}
 }
 
-func (c *CacheMap) Using(index uint64) {
-	c.bds[index].Mru = true
+func (c *BlockDescriptorArray) Using(index uint64) {
+	c.bds[index].clock_set = true
 }
 
-func (c *CacheMap) Free(index uint64) {
-	c.bds[index].Mru = false
-	c.bds[index].Used = false
-	c.bds[index].Key = INVALID_KEY
+func (c *BlockDescriptorArray) Free(index uint64) {
+	c.bds[index].clock_set = false
+	c.bds[index].used = false
+	c.bds[index].key = INVALID_KEY
 }
 
-func (c *CacheMap) Save() (*CacheMapSave, error) {
-	cms := &CacheMapSave{}
+func (c *BlockDescriptorArray) Save() (*BlockDescriptorArraySave, error) {
+	cms := &BlockDescriptorArraySave{}
 	cms.Index = c.index
 	cms.Size = c.size
 
 	return cms, nil
 }
 
-func (c *CacheMap) Load(cms *CacheMapSave, addressmap map[uint64]uint64) error {
+func (c *BlockDescriptorArray) Load(cms *BlockDescriptorArraySave, addressmap map[uint64]uint64) error {
 
 	if cms.Size != c.size {
 		return errors.New("Loaded metadata cache map size is not equal to the current cache map size")
 	}
 
 	for key, index := range addressmap {
-		c.bds[index].Used = true
-		c.bds[index].Key = key
+		c.bds[index].used = true
+		c.bds[index].key = key
 	}
 
 	c.index = cms.Index

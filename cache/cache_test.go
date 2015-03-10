@@ -273,16 +273,16 @@ func TestCacheMultiblock(t *testing.T) {
 	c.Invalidate(&message.IoPkt{Offset: 4096, Nblocks: 2})
 	tests.Assert(t, c.stats.insertions == 4)
 	tests.Assert(t, c.stats.invalidatehits == 2)
-	tests.Assert(t, c.cachemap.bds[0].Used == true)
-	tests.Assert(t, c.cachemap.bds[0].Key == 0)
-	tests.Assert(t, c.cachemap.bds[1].Used == false)
-	tests.Assert(t, c.cachemap.bds[2].Used == false)
-	tests.Assert(t, c.cachemap.bds[3].Used == true)
-	tests.Assert(t, c.cachemap.bds[3].Key == 3*4096)
+	tests.Assert(t, c.bda.bds[0].used == true)
+	tests.Assert(t, c.bda.bds[0].key == 0)
+	tests.Assert(t, c.bda.bds[1].used == false)
+	tests.Assert(t, c.bda.bds[2].used == false)
+	tests.Assert(t, c.bda.bds[3].used == true)
+	tests.Assert(t, c.bda.bds[3].key == 3*4096)
 
 	// Set the clock so they do not get erased
-	c.cachemap.bds[0].Mru = true
-	c.cachemap.bds[3].Mru = true
+	c.bda.bds[0].clock_set = true
+	c.bda.bds[3].clock_set = true
 
 	// Insert multiblock
 	largebuffer := make([]byte, 6*4096)
@@ -307,38 +307,38 @@ func TestCacheMultiblock(t *testing.T) {
 	tests.Assert(t, c.stats.invalidatehits == 2)
 
 	// Check the two blocks left from before
-	tests.Assert(t, c.cachemap.bds[0].Used == true)
-	tests.Assert(t, c.cachemap.bds[0].Key == 0)
-	tests.Assert(t, c.cachemap.bds[0].Mru == false)
+	tests.Assert(t, c.bda.bds[0].used == true)
+	tests.Assert(t, c.bda.bds[0].key == 0)
+	tests.Assert(t, c.bda.bds[0].clock_set == false)
 
-	tests.Assert(t, c.cachemap.bds[3].Used == true)
-	tests.Assert(t, c.cachemap.bds[3].Key == 3*4096)
-	tests.Assert(t, c.cachemap.bds[3].Mru == true)
+	tests.Assert(t, c.bda.bds[3].used == true)
+	tests.Assert(t, c.bda.bds[3].key == 3*4096)
+	tests.Assert(t, c.bda.bds[3].clock_set == true)
 
 	// Now check the blocks we inserted
-	tests.Assert(t, c.cachemap.bds[4].Used == true)
-	tests.Assert(t, c.cachemap.bds[4].Key == 10*4096)
-	tests.Assert(t, c.cachemap.bds[4].Mru == false)
+	tests.Assert(t, c.bda.bds[4].used == true)
+	tests.Assert(t, c.bda.bds[4].key == 10*4096)
+	tests.Assert(t, c.bda.bds[4].clock_set == false)
 
-	tests.Assert(t, c.cachemap.bds[5].Used == true)
-	tests.Assert(t, c.cachemap.bds[5].Key == 11*4096)
-	tests.Assert(t, c.cachemap.bds[5].Mru == false)
+	tests.Assert(t, c.bda.bds[5].used == true)
+	tests.Assert(t, c.bda.bds[5].key == 11*4096)
+	tests.Assert(t, c.bda.bds[5].clock_set == false)
 
-	tests.Assert(t, c.cachemap.bds[6].Used == true)
-	tests.Assert(t, c.cachemap.bds[6].Key == 12*4096)
-	tests.Assert(t, c.cachemap.bds[6].Mru == false)
+	tests.Assert(t, c.bda.bds[6].used == true)
+	tests.Assert(t, c.bda.bds[6].key == 12*4096)
+	tests.Assert(t, c.bda.bds[6].clock_set == false)
 
-	tests.Assert(t, c.cachemap.bds[7].Used == true)
-	tests.Assert(t, c.cachemap.bds[7].Key == 13*4096)
-	tests.Assert(t, c.cachemap.bds[7].Mru == false)
+	tests.Assert(t, c.bda.bds[7].used == true)
+	tests.Assert(t, c.bda.bds[7].key == 13*4096)
+	tests.Assert(t, c.bda.bds[7].clock_set == false)
 
-	tests.Assert(t, c.cachemap.bds[1].Used == true)
-	tests.Assert(t, c.cachemap.bds[1].Key == 14*4096)
-	tests.Assert(t, c.cachemap.bds[1].Mru == false)
+	tests.Assert(t, c.bda.bds[1].used == true)
+	tests.Assert(t, c.bda.bds[1].key == 14*4096)
+	tests.Assert(t, c.bda.bds[1].clock_set == false)
 
-	tests.Assert(t, c.cachemap.bds[2].Used == true)
-	tests.Assert(t, c.cachemap.bds[2].Key == 15*4096)
-	tests.Assert(t, c.cachemap.bds[2].Mru == false)
+	tests.Assert(t, c.bda.bds[2].used == true)
+	tests.Assert(t, c.bda.bds[2].key == 15*4096)
+	tests.Assert(t, c.bda.bds[2].clock_set == false)
 
 	// Check for a block not in the cache
 	m = message.NewMsgGet()
