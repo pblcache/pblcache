@@ -100,7 +100,7 @@ func main() {
 	blocksize_bytes := uint64(blocksize * KB)
 
 	// Open cache
-	var c *cache.Cache
+	var c *cache.CacheMap
 	var log *cache.Log
 	var logblocks uint64
 
@@ -124,7 +124,7 @@ func main() {
 		}
 
 		// Connect cache metadata with log
-		c = cache.NewCache(logblocks, blocksize_bytes, log.Msgchan)
+		c = cache.NewCacheMap(logblocks, blocksize_bytes, log.Msgchan)
 		cache_state := "New"
 		if _, err = os.Stat(cachesavefile); err == nil {
 			err = c.Load(cachesavefile, log)

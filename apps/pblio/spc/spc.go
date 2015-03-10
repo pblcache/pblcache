@@ -33,11 +33,11 @@ const (
 
 type SpcInfo struct {
 	asus      []*Asu
-	pblcache  *cache.Cache
+	pblcache  *cache.CacheMap
 	blocksize int
 }
 
-func NewSpcInfo(c *cache.Cache,
+func NewSpcInfo(c *cache.CacheMap,
 	usedirectio bool,
 	blocksize int) *SpcInfo {
 

@@ -27,12 +27,12 @@ import (
 	"time"
 )
 
-func TestNewCache(t *testing.T) {
+func TestNewCacheMap(t *testing.T) {
 	nc := message.NewNullTerminator()
 	nc.Start()
 	defer nc.Close()
 
-	c := NewCache(8, 4096, nc.In)
+	c := NewCacheMap(8, 4096, nc.In)
 	tests.Assert(t, c != nil)
 	c.Close()
 }
@@ -42,7 +42,7 @@ func TestInvalidateMultipleBlocks(t *testing.T) {
 	nc.Start()
 	defer nc.Close()
 
-	c := NewCache(8, 4096, nc.In)
+	c := NewCacheMap(8, 4096, nc.In)
 	tests.Assert(t, c != nil)
 	defer c.Close()
 
@@ -67,7 +67,7 @@ func TestInvalidateMultipleBlocks(t *testing.T) {
 	tests.Assert(t, c.addressmap[8*4096] == 8)
 }
 
-func TestCacheSimple(t *testing.T) {
+func TestCacheMapSimple(t *testing.T) {
 	mocklog := make(chan *message.Message)
 
 	// This service will run in its own goroutine
@@ -76,7 +76,7 @@ func TestCacheSimple(t *testing.T) {
 	pipeline.Start()
 	defer pipeline.Close()
 
-	c := NewCache(8, 4096, pipeline.In)
+	c := NewCacheMap(8, 4096, pipeline.In)
 	tests.Assert(t, c != nil)
 
 	here := make(chan *message.Message)
@@ -95,7 +95,7 @@ func TestCacheSimple(t *testing.T) {
 	logmsg := <-mocklog
 	logio := logmsg.IoPkt()
 	tests.Assert(t, m.Type == logmsg.Type)
-	tests.Assert(t, logmsg.Priv.(*Cache) == c)
+	tests.Assert(t, logmsg.Priv.(*CacheMap) == c)
 	tests.Assert(t, io.Nblocks == logio.Nblocks)
 	tests.Assert(t, io.Offset == logio.Offset)
 	tests.Assert(t, logio.BlockNum == 0)
@@ -104,7 +104,7 @@ func TestCacheSimple(t *testing.T) {
 	returnedmsg := <-here
 	rio := returnedmsg.IoPkt()
 	tests.Assert(t, m.Type == returnedmsg.Type)
-	tests.Assert(t, returnedmsg.Priv.(*Cache) == c)
+	tests.Assert(t, returnedmsg.Priv.(*CacheMap) == c)
 	tests.Assert(t, io.Nblocks == rio.Nblocks)
 	tests.Assert(t, io.Offset == rio.Offset)
 	tests.Assert(t, c.stats.insertions == 1)
@@ -240,7 +240,7 @@ func TestCacheSimple(t *testing.T) {
 //
 // At the end, check multiblock Get()
 //
-func TestCacheMultiblock(t *testing.T) {
+func TestCacheMapMultiblock(t *testing.T) {
 	// This service will run in its own goroutine
 	// and send to mocklog any messages
 	mocklog := make(chan *message.Message)
@@ -248,7 +248,7 @@ func TestCacheMultiblock(t *testing.T) {
 	pipe.Start()
 	defer pipe.Close()
 
-	c := NewCache(8, 4096, pipe.In)
+	c := NewCacheMap(8, 4096, pipe.In)
 	tests.Assert(t, c != nil)
 
 	here := make(chan *message.Message)
@@ -425,7 +425,7 @@ func TestCacheMultiblock(t *testing.T) {
 	tests.Assert(t, err == nil)
 
 	c.Close()
-	c = NewCache(8, 4096, pipe.In)
+	c = NewCacheMap(8, 4096, pipe.In)
 	tests.Assert(t, c != nil)
 
 	err = c.Load(save, nil)
@@ -528,14 +528,14 @@ func response_handler(wg *sync.WaitGroup,
 		tp.MeanTimeUsecs())
 }
 
-func TestCacheConcurrency(t *testing.T) {
+func TestCacheMapConcurrency(t *testing.T) {
 	var wgIo, wgRet sync.WaitGroup
 
 	nc := message.NewNullTerminator()
 	nc.Start()
 	defer nc.Close()
 
-	c := NewCache(300, 4096, nc.In)
+	c := NewCacheMap(300, 4096, nc.In)
 
 	// Start up response server
 	returnch := make(chan *message.Message, 100)

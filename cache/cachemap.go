@@ -25,16 +25,16 @@ import (
 	"sync"
 )
 
-type CacheSave struct {
-	Cachemap          *BlockDescriptorArraySave
+type CacheMapSave struct {
+	Bda               *BlockDescriptorArraySave
 	Log               *LogSave
 	Addressmap        map[uint64]uint64
 	Blocks, Blocksize uint64
 }
 
-type Cache struct {
+type CacheMap struct {
 	stats             *cachestats
-	bda          *BlockDescriptorArray
+	bda               *BlockDescriptorArray
 	addressmap        map[uint64]uint64
 	blocks, blocksize uint64
 	pipeline          chan *message.Message
@@ -52,12 +52,12 @@ var (
 	ErrPending   = errors.New("New messages where created and are pending")
 )
 
-func NewCache(blocks, blocksize uint64, pipeline chan *message.Message) *Cache {
+func NewCacheMap(blocks, blocksize uint64, pipeline chan *message.Message) *CacheMap {
 
 	godbc.Require(blocks > 0)
 	godbc.Require(pipeline != nil)
 
-	cache := &Cache{}
+	cache := &CacheMap{}
 	cache.blocks = blocks
 	cache.pipeline = pipeline
 	cache.blocksize = blocksize
@@ -74,10 +74,10 @@ func NewCache(blocks, blocksize uint64, pipeline chan *message.Message) *Cache {
 	return cache
 }
 
-func (c *Cache) Close() {
+func (c *CacheMap) Close() {
 }
 
-func (c *Cache) Invalidate(io *message.IoPkt) error {
+func (c *CacheMap) Invalidate(io *message.IoPkt) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -88,7 +88,7 @@ func (c *Cache) Invalidate(io *message.IoPkt) error {
 	return nil
 }
 
-func (c *Cache) Put(msg *message.Message) error {
+func (c *CacheMap) Put(msg *message.Message) error {
 
 	err := msg.Check()
 	if err != nil {
@@ -133,7 +133,7 @@ func (c *Cache) Put(msg *message.Message) error {
 	return nil
 }
 
-func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
+func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 
 	err := msg.Check()
 	if err != nil {
@@ -214,7 +214,7 @@ func (c *Cache) Get(msg *message.Message) (*HitmapPkt, error) {
 	}
 }
 
-func (c *Cache) create_get_submsg(msg *message.Message,
+func (c *CacheMap) create_get_submsg(msg *message.Message,
 	offset, buffer_offset, blocknum uint64,
 	buffer []byte) *message.Message {
 
@@ -230,7 +230,7 @@ func (c *Cache) create_get_submsg(msg *message.Message,
 	return m
 }
 
-func (c *Cache) invalidate(key uint64) bool {
+func (c *CacheMap) invalidate(key uint64) bool {
 	c.stats.invalidation()
 
 	if index, ok := c.addressmap[key]; ok {
@@ -245,7 +245,7 @@ func (c *Cache) invalidate(key uint64) bool {
 	return false
 }
 
-func (c *Cache) put(key uint64) (index uint64) {
+func (c *CacheMap) put(key uint64) (index uint64) {
 
 	var (
 		evictkey uint64
@@ -264,7 +264,7 @@ func (c *Cache) put(key uint64) (index uint64) {
 	return
 }
 
-func (c *Cache) get(key uint64) (index uint64, ok bool) {
+func (c *CacheMap) get(key uint64) (index uint64, ok bool) {
 
 	c.stats.read()
 
@@ -276,30 +276,30 @@ func (c *Cache) get(key uint64) (index uint64, ok bool) {
 	return
 }
 
-func (c *Cache) String() string {
+func (c *CacheMap) String() string {
 	return c.stats.stats().String()
 }
 
-func (c *Cache) Stats() *CacheStats {
+func (c *CacheMap) Stats() *CacheStats {
 	return c.stats.stats()
 }
 
-func (c *Cache) StatsClear() {
+func (c *CacheMap) StatsClear() {
 	c.stats.clear()
 }
 
-func (c *Cache) Save(filename string, log *Log) error {
+func (c *CacheMap) Save(filename string, log *Log) error {
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	cs := &CacheSave{}
+	cs := &CacheMapSave{}
 	cs.Addressmap = c.addressmap
 	cs.Blocks = c.blocks
 	cs.Blocksize = c.blocksize
 
 	var err error
-	cs.Cachemap, err = c.bda.Save()
+	cs.Bda, err = c.bda.Save()
 	if err != nil {
 		return err
 	}
@@ -326,11 +326,11 @@ func (c *Cache) Save(filename string, log *Log) error {
 	return nil
 }
 
-func (c *Cache) Load(filename string, log *Log) error {
+func (c *CacheMap) Load(filename string, log *Log) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	cs := &CacheSave{}
+	cs := &CacheMapSave{}
 
 	fi, err := os.Open(filename)
 	if err != nil {
@@ -344,7 +344,7 @@ func (c *Cache) Load(filename string, log *Log) error {
 		return err
 	}
 
-	err = c.bda.Load(cs.Cachemap, cs.Addressmap)
+	err = c.bda.Load(cs.Bda, cs.Addressmap)
 	if err != nil {
 		return err
 	}
@@ -354,7 +354,7 @@ func (c *Cache) Load(filename string, log *Log) error {
 	} else if cs.Log != nil && log == nil {
 		return errors.New("Log unavaiable to apply loaded metadata")
 	} else if cs.Log != nil && log != nil {
-		err = log.Load(cs.Log, cs.Cachemap.Index)
+		err = log.Load(cs.Log, cs.Bda.Index)
 		if err != nil {
 			return err
 		}
