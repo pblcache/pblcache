@@ -83,7 +83,7 @@ func response_handler(t *testing.T,
 	Assert(t, errors == 0)
 }
 
-func cacheio(t *testing.T, c *cache.Cache, log *cache.Log,
+func cacheio(t *testing.T, c *cache.CacheMap, log *cache.Log,
 	actual_blocks, blocksize uint64) {
 	var wgIo, wgRet sync.WaitGroup
 
@@ -206,7 +206,7 @@ func TestSimpleCache(t *testing.T) {
 		bcsize,
 		false)
 	Assert(t, err == nil)
-	c := cache.NewCache(actual_blocks, blocksize, log.Msgchan)
+	c := cache.NewCacheMap(actual_blocks, blocksize, log.Msgchan)
 	defer os.Remove(logfile)
 	log.Start()
 
@@ -228,7 +228,7 @@ func TestSimpleCache(t *testing.T) {
 		bcsize,
 		false)
 	Assert(t, err == nil)
-	c = cache.NewCache(actual_blocks, blocksize, log.Msgchan)
+	c = cache.NewCacheMap(actual_blocks, blocksize, log.Msgchan)
 	c.Load(save, log)
 	log.Start()
 

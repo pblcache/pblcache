@@ -23,7 +23,7 @@ import (
 )
 
 func readandstore(fp io.ReaderAt,
-	c *cache.Cache,
+	c *cache.CacheMap,
 	devid uint16,
 	offset uint64,
 	nblocks uint64,
@@ -43,7 +43,7 @@ func readandstore(fp io.ReaderAt,
 }
 
 func read(fp io.ReaderAt,
-	c *cache.Cache,
+	c *cache.CacheMap,
 	devid uint16,
 	offset, blocksize_bytes uint64,
 	nblocks int,
@@ -137,7 +137,7 @@ func read(fp io.ReaderAt,
 }
 
 func write(fp io.WriterAt,
-	c *cache.Cache,
+	c *cache.CacheMap,
 	devid uint16,
 	offset, blocksize_bytes uint64,
 	nblocks int,

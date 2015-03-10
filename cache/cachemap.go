@@ -17,112 +17,352 @@
 package cache
 
 import (
+	"encoding/gob"
 	"errors"
 	"github.com/lpabon/godbc"
+	"github.com/pblcache/pblcache/message"
+	"os"
+	"sync"
 )
-
-const (
-	INVALID_KEY = ^uint64(0)
-)
-
-type BlockDescriptor struct {
-	Key  uint64
-	Mru  bool
-	Used bool
-}
 
 type CacheMapSave struct {
-	Index uint64
-	Size  uint64
+	Bda               *BlockDescriptorArraySave
+	Log               *LogSave
+	Addressmap        map[uint64]uint64
+	Blocks, Blocksize uint64
 }
 
 type CacheMap struct {
-	bds   []BlockDescriptor
-	size  uint64
-	index uint64
+	stats             *cachestats
+	bda               *BlockDescriptorArray
+	addressmap        map[uint64]uint64
+	blocks, blocksize uint64
+	pipeline          chan *message.Message
+	lock              sync.Mutex
 }
 
-func NewCacheMap(blocks uint64) *CacheMap {
+type HitmapPkt struct {
+	Hitmap []bool
+	Hits   int
+}
+
+var (
+	ErrNotFound  = errors.New("None of the blocks where found")
+	ErrSomeFound = errors.New("Only some of the blocks where found")
+	ErrPending   = errors.New("New messages where created and are pending")
+)
+
+func NewCacheMap(blocks, blocksize uint64, pipeline chan *message.Message) *CacheMap {
 
 	godbc.Require(blocks > 0)
+	godbc.Require(pipeline != nil)
 
-	c := &CacheMap{}
+	cache := &CacheMap{}
+	cache.blocks = blocks
+	cache.pipeline = pipeline
+	cache.blocksize = blocksize
 
-	c.size = blocks
-	c.bds = make([]BlockDescriptor, blocks)
+	cache.stats = &cachestats{}
+	cache.bda = NewBlockDescriptorArray(cache.blocks)
+	cache.addressmap = make(map[uint64]uint64)
 
-	return c
+	godbc.Ensure(cache.blocks > 0)
+	godbc.Ensure(cache.bda != nil)
+	godbc.Ensure(cache.addressmap != nil)
+	godbc.Ensure(cache.stats != nil)
+
+	return cache
 }
 
-func (c *CacheMap) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
-	for {
+func (c *CacheMap) Close() {
+}
 
-		// Use the current index to check the current entry
-		for ; c.index < c.size; c.index++ {
-			entry := &c.bds[c.index]
+func (c *CacheMap) Invalidate(io *message.IoPkt) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
-			// CLOCK: If it has been used recently, then do not evict
-			if entry.Mru {
-				entry.Mru = false
+	for block := 0; block < io.Nblocks; block++ {
+		c.invalidate(io.Offset + uint64(block)*c.blocksize)
+	}
+
+	return nil
+}
+
+func (c *CacheMap) Put(msg *message.Message) error {
+
+	err := msg.Check()
+	if err != nil {
+		return err
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	io := msg.IoPkt()
+
+	if io.Nblocks > 1 {
+		// Have parent message wait for its children
+		defer msg.Done()
+
+		//
+		// It does not matter that we send small blocks to the Log, since
+		// it will buffer them before sending them out to the cache device
+		//
+		// We do need to send each one sperately now so that the cache
+		// policy hopefully aligns them one after the other.
+		//
+		for block := 0; block < io.Nblocks; block++ {
+			child := message.NewMsgPut()
+			buffer_offset := uint64(block) * c.blocksize
+			msg.Add(child)
+
+			child_io := child.IoPkt()
+			child_io.Offset = io.Offset + buffer_offset
+			child_io.Buffer = io.Buffer[buffer_offset : buffer_offset+c.blocksize]
+			child_io.BlockNum = c.put(child_io.Offset)
+			child_io.Nblocks = 1
+
+			// Send to next one in line
+			c.pipeline <- child
+		}
+	} else {
+		io.BlockNum = c.put(io.Offset)
+		c.pipeline <- msg
+	}
+
+	return nil
+}
+
+func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
+
+	err := msg.Check()
+	if err != nil {
+		return nil, err
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	io := msg.IoPkt()
+	hitmap := make([]bool, io.Nblocks)
+	hits := 0
+
+	// Create a message
+	var m *message.Message
+	var mblock uint64
+
+	for block := uint64(0); block < uint64(io.Nblocks); block++ {
+		// Get
+		buffer_offset := block * c.blocksize
+		current_offset := io.Offset + buffer_offset
+		if index, ok := c.get(current_offset); ok {
+			hitmap[block] = true
+			hits++
+
+			// Check if we already have a message ready
+			if m == nil {
+
+				// This is the first message, so let's set it up
+				m = c.create_get_submsg(msg,
+					current_offset,
+					buffer_offset,
+					index,
+					io.Buffer[buffer_offset:(block+1)*c.blocksize])
+				mblock = block
 			} else {
+				// Let's check what block we are using starting from the block
+				// setup by the message
+				numblocks := block - mblock
 
-				// If it is in use, then we need to evict the older key
-				if entry.Used {
-					evictkey = entry.Key
-					evict = true
+				// If the next block is available on the log after this block, then
+				// we can optimize the read by reading a larger amount from the log.
+				if m.IoPkt().BlockNum+numblocks == index && hitmap[block-1] == true {
+					// It is the next in both the cache and storage device
+					mio := m.IoPkt()
+					mio.Buffer = io.Buffer[mblock*c.blocksize : (mblock+numblocks+1)*c.blocksize]
+					mio.Nblocks++
 				} else {
-					evictkey = INVALID_KEY
-					evict = false
+					// Send the previous one
+					c.pipeline <- m
+
+					// This is the first message, so let's set it up
+					m = c.create_get_submsg(msg,
+						current_offset,
+						buffer_offset,
+						index,
+						io.Buffer[buffer_offset:(block+1)*c.blocksize])
+					mblock = block
 				}
 
-				// Set return values
-				newindex = c.index
-
-				// Setup current cachemap entry
-				entry.Key = key
-				entry.Mru = false
-				entry.Used = true
-
-				// Set index to next cachemap entry
-				c.index++
-
-				return
 			}
 		}
-		c.index = 0
+	}
+
+	// Check if we have one more message
+	if m != nil {
+		c.pipeline <- m
+	}
+	if hits > 0 {
+		hitmappkt := &HitmapPkt{
+			Hitmap: hitmap,
+			Hits:   hits,
+		}
+		msg.Done()
+		return hitmappkt, nil
+	} else {
+		return nil, ErrNotFound
 	}
 }
 
-func (c *CacheMap) Using(index uint64) {
-	c.bds[index].Mru = true
+func (c *CacheMap) create_get_submsg(msg *message.Message,
+	offset, buffer_offset, blocknum uint64,
+	buffer []byte) *message.Message {
+
+	m := message.NewMsgGet()
+	msg.Add(m)
+
+	// Set IoPkt
+	mio := m.IoPkt()
+	mio.Offset = offset
+	mio.Buffer = buffer
+	mio.BlockNum = blocknum
+
+	return m
 }
 
-func (c *CacheMap) Free(index uint64) {
-	c.bds[index].Mru = false
-	c.bds[index].Used = false
-	c.bds[index].Key = INVALID_KEY
-}
+func (c *CacheMap) invalidate(key uint64) bool {
+	c.stats.invalidation()
 
-func (c *CacheMap) Save() (*CacheMapSave, error) {
-	cms := &CacheMapSave{}
-	cms.Index = c.index
-	cms.Size = c.size
+	if index, ok := c.addressmap[key]; ok {
+		c.stats.invalidateHit()
 
-	return cms, nil
-}
+		c.bda.Free(index)
+		delete(c.addressmap, key)
 
-func (c *CacheMap) Load(cms *CacheMapSave, addressmap map[uint64]uint64) error {
-
-	if cms.Size != c.size {
-		return errors.New("Loaded metadata cache map size is not equal to the current cache map size")
+		return true
 	}
 
-	for key, index := range addressmap {
-		c.bds[index].Used = true
-		c.bds[index].Key = key
+	return false
+}
+
+func (c *CacheMap) put(key uint64) (index uint64) {
+
+	var (
+		evictkey uint64
+		evict    bool
+	)
+
+	c.stats.insertion()
+
+	if index, evictkey, evict = c.bda.Insert(key); evict {
+		c.stats.eviction()
+		delete(c.addressmap, evictkey)
 	}
 
-	c.index = cms.Index
+	c.addressmap[key] = index
+
+	return
+}
+
+func (c *CacheMap) get(key uint64) (index uint64, ok bool) {
+
+	c.stats.read()
+
+	if index, ok = c.addressmap[key]; ok {
+		c.stats.readHit()
+		c.bda.Using(index)
+	}
+
+	return
+}
+
+func (c *CacheMap) String() string {
+	return c.stats.stats().String()
+}
+
+func (c *CacheMap) Stats() *CacheStats {
+	return c.stats.stats()
+}
+
+func (c *CacheMap) StatsClear() {
+	c.stats.clear()
+}
+
+func (c *CacheMap) Save(filename string, log *Log) error {
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	cs := &CacheMapSave{}
+	cs.Addressmap = c.addressmap
+	cs.Blocks = c.blocks
+	cs.Blocksize = c.blocksize
+
+	var err error
+	cs.Bda, err = c.bda.Save()
+	if err != nil {
+		return err
+	}
+
+	if log != nil {
+		cs.Log, err = log.Save()
+		if err != nil {
+			return err
+		}
+	}
+
+	fi, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer fi.Close()
+
+	encoder := gob.NewEncoder(fi)
+	err = encoder.Encode(cs)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *CacheMap) Load(filename string, log *Log) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	cs := &CacheMapSave{}
+
+	fi, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer fi.Close()
+
+	decoder := gob.NewDecoder(fi)
+	err = decoder.Decode(&cs)
+	if err != nil {
+		return err
+	}
+
+	err = c.bda.Load(cs.Bda, cs.Addressmap)
+	if err != nil {
+		return err
+	}
+
+	if cs.Log == nil && log != nil {
+		return errors.New("No log metadata available")
+	} else if cs.Log != nil && log == nil {
+		return errors.New("Log unavaiable to apply loaded metadata")
+	} else if cs.Log != nil && log != nil {
+		err = log.Load(cs.Log, cs.Bda.Index)
+		if err != nil {
+			return err
+		}
+	}
+
+	c.addressmap = cs.Addressmap
+	c.blocks = cs.Blocks
+	c.blocksize = cs.Blocksize
 
 	return nil
 }

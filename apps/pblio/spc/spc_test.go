@@ -27,7 +27,7 @@ import (
 
 func TestNewSpcInfo(t *testing.T) {
 
-	var cache *cache.Cache
+	var cache *cache.CacheMap
 
 	usedirectio := false
 	blocksize := 4 * KB
@@ -47,7 +47,7 @@ func TestNewSpcInfo(t *testing.T) {
 func TestSpcOpen(t *testing.T) {
 
 	// initialize
-	var cache *cache.Cache
+	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
 	s := NewSpcInfo(cache, usedirectio, blocksize)
@@ -72,7 +72,7 @@ func TestSpcOpen(t *testing.T) {
 func TestSpcAdjustAsuSizes(t *testing.T) {
 
 	// initialize
-	var cache *cache.Cache
+	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
 	s := NewSpcInfo(cache, usedirectio, blocksize)
@@ -119,7 +119,7 @@ func TestSpcAdjustAsuSizes(t *testing.T) {
 func TestSpcSize(t *testing.T) {
 
 	// initialize
-	var cache *cache.Cache
+	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
 	s := NewSpcInfo(cache, usedirectio, blocksize)
@@ -136,7 +136,7 @@ func TestSpcSize(t *testing.T) {
 func TestSpc1Init(t *testing.T) {
 
 	// initialize
-	var cache *cache.Cache
+	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
 	s := NewSpcInfo(cache, usedirectio, blocksize)
@@ -179,7 +179,7 @@ func TestSpc1Init(t *testing.T) {
 func TestSpcContext(t *testing.T) {
 
 	// initialize
-	var cache *cache.Cache
+	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
 	s := NewSpcInfo(cache, usedirectio, blocksize)
@@ -264,7 +264,7 @@ func TestSpcContext(t *testing.T) {
 func TestSpcContextQuit(t *testing.T) {
 
 	// initialize
-	var cache *cache.Cache
+	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
 	s := NewSpcInfo(cache, usedirectio, blocksize)
