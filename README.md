@@ -6,6 +6,9 @@
 
 Pblcache is an open source project to provide applications with a persistent, look-aside, block based cache.
 
+# Presentations
+* [Linux Foundation Vault Conference 2015](http://redhat.slides.com/lpabon/deck-4)
+
 # Documentation
 Please visit the [WIKI](https://github.com/pblcache/pblcache/wiki) for project documentation.
 
