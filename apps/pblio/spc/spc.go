@@ -68,18 +68,18 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 		if io.Asu == 3 {
 			s.asus[ASU3].WriteAt(
 				buffer[0:io.Blocks*4*KB],
-				int64(io.Offset)*int64(4*KB))
+				int64(io.BlockNum)*int64(4*KB))
 		} else {
 			// Send the io
 			if io.Isread {
 				if s.pblcache == nil {
 					s.asus[io.Asu-1].ReadAt(buffer[0:io.Blocks*4*KB],
-						int64(io.Offset)*int64(4*KB))
+						int64(io.BlockNum)*int64(4*KB))
 				} else {
 					read(s.asus[io.Asu-1],
 						s.pblcache,
 						uint16(io.Asu),
-						uint64(io.Offset)*uint64(4*KB),
+						uint64(io.BlockNum)*uint64(4*KB),
 						uint64(s.blocksize*KB),
 						int(io.Blocks),
 						buffer[0:io.Blocks*4*KB])
@@ -87,12 +87,12 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 			} else {
 				if s.pblcache == nil {
 					s.asus[io.Asu-1].WriteAt(buffer[0:io.Blocks*4*KB],
-						int64(io.Offset)*int64(4*KB))
+						int64(io.BlockNum)*int64(4*KB))
 				} else {
 					write(s.asus[io.Asu-1],
 						s.pblcache,
 						uint16(io.Asu),
-						uint64(io.Offset)*uint64(4*KB),
+						uint64(io.BlockNum)*uint64(4*KB),
 						uint64(s.blocksize*KB),
 						int(io.Blocks),
 						buffer[0:io.Blocks*4*KB])

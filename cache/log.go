@@ -191,7 +191,7 @@ func (c *Log) logread() {
 	defer c.wg.Done()
 	for m := range c.logreaders {
 		iopkt := m.IoPkt()
-		offset := c.offset(iopkt.BlockNum)
+		offset := c.offset(iopkt.LogBlock)
 
 		// Read from storage
 		start := time.Now()
@@ -322,17 +322,17 @@ func (c *Log) inRange(index uint64, s *IoSegment) bool {
 func (c *Log) put(msg *message.Message) error {
 
 	iopkt := msg.IoPkt()
-	godbc.Require(iopkt.BlockNum < c.blocks)
+	godbc.Require(iopkt.LogBlock < c.blocks)
 
 	// Make sure the block number curresponds to the
 	// current segment.  If not, c.sync() will place
 	// the next available segment into c.segment
-	for !c.inRange(iopkt.BlockNum, c.segment) {
+	for !c.inRange(iopkt.LogBlock, c.segment) {
 		c.sync()
 	}
 
 	// get log offset
-	offset := c.offset(iopkt.BlockNum)
+	offset := c.offset(iopkt.LogBlock)
 
 	// Write to current buffer
 	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
@@ -356,10 +356,10 @@ func (c *Log) get(msg *message.Message) error {
 	iopkt := msg.IoPkt()
 
 	var readmsg *message.Message
-	orig_nblocks := iopkt.Nblocks
-	for block := 0; block < iopkt.Nblocks; block++ {
+	orig_nblocks := iopkt.Blocks
+	for block := 0; block < iopkt.Blocks; block++ {
 		ramhit := false
-		blocknumber := iopkt.BlockNum + uint64(block)
+		blocknumber := iopkt.LogBlock + uint64(block)
 		offset := c.offset(blocknumber)
 
 		// Check if the data is in RAM.  Go through each buffered segment
@@ -386,13 +386,13 @@ func (c *Log) get(msg *message.Message) error {
 				readmsg = message.NewMsgGet()
 				msg.Add(readmsg)
 				io := readmsg.IoPkt()
-				io.BlockNum = iopkt.BlockNum + uint64(block)
-				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
-				io.Nblocks = 1
+				io.LogBlock = iopkt.LogBlock + uint64(block)
+				io.Buffer = iopkt.Buffer[(iopkt.LogBlock-io.LogBlock)*c.blocksize : uint64(block+1)*c.blocksize]
+				io.Blocks = 1
 			} else {
 				io := readmsg.IoPkt()
-				io.Nblocks++
-				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
+				io.Blocks++
+				io.Buffer = iopkt.Buffer[(iopkt.LogBlock-io.LogBlock)*c.blocksize : uint64(block+1)*c.blocksize]
 			}
 		} else {
 			if readmsg != nil {
@@ -406,9 +406,9 @@ func (c *Log) get(msg *message.Message) error {
 		c.logreaders <- readmsg
 	}
 
-	if iopkt.Nblocks != orig_nblocks {
+	if iopkt.Blocks != orig_nblocks {
 		msg.Err = ErrPending
-		iopkt.Nblocks = orig_nblocks
+		iopkt.Blocks = orig_nblocks
 	}
 
 	return nil

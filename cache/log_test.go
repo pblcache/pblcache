@@ -91,7 +91,7 @@ func TestWrapPut(t *testing.T) {
 
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
-		iopkt.BlockNum = uint64(io % uint8(blocks))
+		iopkt.LogBlock = uint64(io % uint8(blocks))
 
 		l.Msgchan <- msg
 		<-here
@@ -141,7 +141,7 @@ func TestReadCorrectness(t *testing.T) {
 
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
-		iopkt.BlockNum = uint64(io)
+		iopkt.LogBlock = uint64(io)
 
 		l.Msgchan <- msg
 		<-here
@@ -152,7 +152,7 @@ func TestReadCorrectness(t *testing.T) {
 
 	iopkt := msg.IoPkt()
 	iopkt.Buffer = buf
-	iopkt.BlockNum = blocks - 1
+	iopkt.LogBlock = blocks - 1
 
 	l.Msgchan <- msg
 	<-here
@@ -166,7 +166,7 @@ func TestReadCorrectness(t *testing.T) {
 
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
-		iopkt.BlockNum = uint64(io)
+		iopkt.LogBlock = uint64(io)
 		l.Msgchan <- msg
 
 		// Wait here for the response
@@ -257,7 +257,7 @@ func TestLogConcurrency(t *testing.T) {
 
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
-		iopkt.BlockNum = uint64(io)
+		iopkt.LogBlock = uint64(io)
 
 		l.Msgchan <- msg
 		<-here
@@ -285,7 +285,7 @@ func TestLogConcurrency(t *testing.T) {
 				iopkt.Buffer = make([]byte, bs)
 
 				// Maximum "disk" size is 10 times bigger than cache
-				iopkt.BlockNum = uint64(r.Int63n(int64(blocks)))
+				iopkt.LogBlock = uint64(r.Int63n(int64(blocks)))
 				msg.RetChan = returnch
 
 				// Send request
@@ -311,7 +311,7 @@ func TestLogConcurrency(t *testing.T) {
 
 			iopkt := msg.IoPkt()
 			iopkt.Buffer = buf
-			iopkt.BlockNum = uint64(io)
+			iopkt.LogBlock = uint64(io)
 
 			msg.TimeStart()
 			l.Msgchan <- msg

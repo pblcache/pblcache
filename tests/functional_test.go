@@ -58,7 +58,7 @@ func response_handler(t *testing.T,
 				var offset_in_buffer uint64
 				bio.ReadDataLE(&offset_in_buffer)
 
-				if offset_in_buffer != iopkt.Offset {
+				if offset_in_buffer != iopkt.BlockNum {
 					errors++
 				}
 
@@ -118,8 +118,8 @@ func cacheio(t *testing.T, c *cache.CacheMap, log *cache.Log,
 					// invalidate the block, write the data to the
 					// storage device, then place it in the cache
 					iopkt := &message.IoPkt{
-						Offset:  offset,
-						Nblocks: 1,
+						BlockNum: offset,
+						Blocks:   1,
 					}
 					c.Invalidate(iopkt)
 
@@ -133,7 +133,7 @@ func cacheio(t *testing.T, c *cache.CacheMap, log *cache.Log,
 				messages.Add(msg)
 				iopkt := msg.IoPkt()
 				iopkt.Buffer = make([]byte, blocksize)
-				iopkt.Offset = offset
+				iopkt.BlockNum = offset
 				msg.RetChan = returnch
 
 				msg.TimeStart()

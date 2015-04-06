@@ -27,12 +27,12 @@ import (
 func TestAsuStatCollect(t *testing.T) {
 
 	spc1info := &spc1.Spc1Io{
-		Asu:    1,
-		Blocks: 1,
-		Isread: true,
-		Stream: 2,
-		Offset: 123456,
-		When:   time.Second * 2,
+		Asu:      1,
+		Blocks:   1,
+		Isread:   true,
+		Stream:   2,
+		BlockNum: 123456,
+		When:     time.Second * 2,
 	}
 
 	stat := &IoStats{
@@ -60,12 +60,12 @@ func TestAsuStatCollect(t *testing.T) {
 
 func TestAsuStatCsvDelta(t *testing.T) {
 	spc1info := &spc1.Spc1Io{
-		Asu:    1,
-		Blocks: 1,
-		Isread: true,
-		Stream: 2,
-		Offset: 123456,
-		When:   time.Second * 2,
+		Asu:      1,
+		Blocks:   1,
+		Isread:   true,
+		Stream:   2,
+		BlockNum: 123456,
+		When:     time.Second * 2,
 	}
 
 	stat := &IoStats{

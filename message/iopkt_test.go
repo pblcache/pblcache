@@ -26,9 +26,9 @@ func TestGetIoPkt(t *testing.T) {
 	m := NewMsgGet()
 	m.RetChan = c
 	iopkt := m.IoPkt()
-	tests.Assert(t, iopkt.BlockNum == 0)
+	tests.Assert(t, iopkt.LogBlock == 0)
 	tests.Assert(t, iopkt.Buffer == nil)
-	tests.Assert(t, iopkt.Offset == 0)
+	tests.Assert(t, iopkt.BlockNum == 0)
 	tests.Assert(t, iopkt.Obj == 0)
 	tests.Assert(t, m.RetChan == c)
 	tests.Assert(t, m.Type == MsgGet)
@@ -39,9 +39,9 @@ func TestIoPktString(t *testing.T) {
 	iopkt := m.IoPkt()
 	s := iopkt.String()
 
-	tests.Assert(t, strings.Contains(s, "Offset"))
 	tests.Assert(t, strings.Contains(s, "BlockNum"))
-	tests.Assert(t, strings.Contains(s, "Nblocks"))
+	tests.Assert(t, strings.Contains(s, "LogBlock"))
+	tests.Assert(t, strings.Contains(s, "Blocks"))
 
 }
 
@@ -50,9 +50,9 @@ func TestPutIoPkt(t *testing.T) {
 	m := NewMsgPut()
 	m.RetChan = c
 	iopkt := m.IoPkt()
-	tests.Assert(t, iopkt.BlockNum == 0)
+	tests.Assert(t, iopkt.LogBlock == 0)
 	tests.Assert(t, iopkt.Buffer == nil)
-	tests.Assert(t, iopkt.Offset == 0)
+	tests.Assert(t, iopkt.BlockNum == 0)
 	tests.Assert(t, iopkt.Obj == 0)
 	tests.Assert(t, m.RetChan == c)
 	tests.Assert(t, m.Type == MsgPut)
@@ -63,9 +63,9 @@ func TestInvalidateIoPkt(t *testing.T) {
 	m := NewMsgGet()
 	m.RetChan = c
 	iopkt := m.IoPkt()
-	tests.Assert(t, iopkt.BlockNum == 0)
+	tests.Assert(t, iopkt.LogBlock == 0)
 	tests.Assert(t, iopkt.Buffer == nil)
-	tests.Assert(t, iopkt.Offset == 0)
+	tests.Assert(t, iopkt.BlockNum == 0)
 	tests.Assert(t, iopkt.Obj == 0)
 	tests.Assert(t, m.RetChan == c)
 	tests.Assert(t, m.Type == MsgGet)
