@@ -47,9 +47,7 @@ type HitmapPkt struct {
 }
 
 var (
-	ErrNotFound  = errors.New("None of the blocks where found")
-	ErrSomeFound = errors.New("Only some of the blocks where found")
-	ErrPending   = errors.New("New messages where created and are pending")
+	ErrNotFound = errors.New("None of the blocks where found")
 )
 
 func NewCacheMap(blocks, blocksize uint32, pipeline chan *message.Message) *CacheMap {
@@ -103,7 +101,6 @@ func (c *CacheMap) Put(msg *message.Message) error {
 	if io.Blocks > 1 {
 		// Have parent message wait for its children
 		defer msg.Done()
-		bio := NewBufferIo(io.Buffer, c.blocksize)
 
 		//
 		// It does not matter that we send small blocks to the Log, since
@@ -118,7 +115,7 @@ func (c *CacheMap) Put(msg *message.Message) error {
 
 			child_io := child.IoPkt()
 			child_io.BlockNum = io.BlockNum + block
-			child_io.Buffer = bio.Block(block, 1)
+			child_io.Buffer = SubBlockBuffer(io.Buffer, c.blocksize, block, 1)
 			child_io.LogBlock = c.put(child_io.BlockNum)
 			child_io.Blocks = 1
 
@@ -144,7 +141,6 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 	defer c.lock.Unlock()
 
 	io := msg.IoPkt()
-	bio := NewBufferIo(io.Buffer, c.blocksize)
 	hitmap := make([]bool, io.Blocks)
 	hits := 0
 
@@ -166,7 +162,7 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 				m = c.create_get_submsg(msg,
 					current_block,
 					index,
-					bio.Block(block, 1))
+					SubBlockBuffer(io.Buffer, c.blocksize, block, 1))
 				mblock = block
 			} else {
 				// Let's check what block we are using starting from the block
@@ -178,7 +174,7 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 				if m.IoPkt().LogBlock+numblocks == index && hitmap[block-1] == true {
 					// It is the next in both the cache and storage device
 					mio := m.IoPkt()
-					mio.Buffer = bio.Block(mblock, numblocks)
+					mio.Buffer = SubBlockBuffer(io.Buffer, c.blocksize, mblock, numblocks)
 					mio.Blocks++
 				} else {
 					// Send the previous one

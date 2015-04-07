@@ -308,11 +308,13 @@ func (c *Log) sync() {
 	c.segment = <-c.chavailable
 }
 
-func (c *Log) offset(index uint64) uint64 {
-	return (index * c.blocksize)
+// Returns the offset in bytes
+func (c *Log) offset(index uint32) uint64 {
+	return (uint64(index) * c.blocksize)
 }
 
-func (c *Log) inRange(index uint64, s *IoSegment) bool {
+// Determines if the index is in the specified segment
+func (c *Log) inRange(index uint32, s *IoSegment) bool {
 	offset := c.offset(index)
 
 	return ((offset >= s.offset) &&
@@ -356,20 +358,19 @@ func (c *Log) get(msg *message.Message) error {
 	iopkt := msg.IoPkt()
 
 	var readmsg *message.Message
-	orig_nblocks := iopkt.Blocks
-	for block := 0; block < iopkt.Blocks; block++ {
+	for block := uint32(0); block < iopkt.Blocks; block++ {
 		ramhit := false
-		blocknumber := iopkt.LogBlock + uint64(block)
-		offset := c.offset(blocknumber)
+		index := iopkt.LogBlock + block
+		offset := c.offset(index)
 
 		// Check if the data is in RAM.  Go through each buffered segment
 		for i := 0; i < c.segmentbuffers; i++ {
 
 			c.segments[i].lock.RLock()
-			if c.inRange(blocknumber, &c.segments[i]) {
+			if c.inRange(index, &c.segments[i]) {
 
 				ramhit = true
-				n, err = c.segments[i].data.ReadAt(iopkt.Buffer[c.blocksize*uint64(block):uint64(block+1)*c.blocksize],
+				n, err = c.segments[i].data.ReadAt(SubBlockBuffer(iopkt.Buffer, c.blocksize, block, 1),
 					int64(offset-c.segments[i].offset))
 
 				godbc.Check(err == nil, err, block, offset, i)
@@ -381,34 +382,27 @@ func (c *Log) get(msg *message.Message) error {
 
 		// We did not find it in ram, let's start making a message
 		if !ramhit {
-			orig_nblocks--
 			if readmsg == nil {
 				readmsg = message.NewMsgGet()
 				msg.Add(readmsg)
 				io := readmsg.IoPkt()
-				io.LogBlock = iopkt.LogBlock + uint64(block)
-				io.Buffer = iopkt.Buffer[(iopkt.LogBlock-io.LogBlock)*c.blocksize : uint64(block+1)*c.blocksize]
+				io.LogBlock = index
 				io.Blocks = 1
 			} else {
-				io := readmsg.IoPkt()
-				io.Blocks++
-				io.Buffer = iopkt.Buffer[(iopkt.LogBlock-io.LogBlock)*c.blocksize : uint64(block+1)*c.blocksize]
+				readmsg.IoPkt().Blocks++
 			}
-		} else {
-			if readmsg != nil {
-				c.logreaders <- readmsg
-				readmsg = nil
-			}
+			io.Buffer = SubBlockBuffer(iopkt.Buffer, c.blocksize, block, io.Blocks)
+		} else if readmsg != nil {
+			// We have a pending message, but the
+			// buffer block was not contiguous.
+			c.logreaders <- readmsg
+			readmsg = nil
 		}
 	}
 
+	// Send pending read
 	if readmsg != nil {
 		c.logreaders <- readmsg
-	}
-
-	if iopkt.Blocks != orig_nblocks {
-		msg.Err = ErrPending
-		iopkt.Blocks = orig_nblocks
 	}
 
 	return nil
