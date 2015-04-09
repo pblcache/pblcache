@@ -21,6 +21,6 @@ import (
 )
 
 func SubBlockBuffer(buffer []byte, blocksize, block, nblocks uint32) []byte {
-	godbc.Require((block+nblocks)*blocksize <= len(buffer))
+	godbc.Require(int((block+nblocks)*blocksize) <= len(buffer))
 	return buffer[block*blocksize : (block+nblocks)*blocksize]
 }
