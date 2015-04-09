@@ -47,24 +47,24 @@ func TestInvalidateMultipleBlocks(t *testing.T) {
 	defer c.Close()
 
 	// Insert some values in the addressmap
-	for i := uint64(0); i < 4; i++ {
+	for i := uint32(0); i < 4; i++ {
 
-		// The key is offset in bytes
-		c.addressmap[i*4096] = i
+		// The key is block number
+		c.addressmap[uint64(i)] = i
 	}
 
 	// This value should still be on the addressmap
-	c.addressmap[8*4096] = 8
+	c.addressmap[8] = 8
 
 	iopkt := &message.IoPkt{
-		BlockNum: 0,
-		Blocks:   8,
+		Address: 0,
+		Blocks:  8,
 	}
 
 	c.Invalidate(iopkt)
 	tests.Assert(t, c.stats.invalidations == uint64(iopkt.Blocks))
 	tests.Assert(t, c.stats.invalidatehits == 4)
-	tests.Assert(t, c.addressmap[8*4096] == 8)
+	tests.Assert(t, c.addressmap[8] == 8)
 }
 
 func TestCacheMapSimple(t *testing.T) {
@@ -85,7 +85,7 @@ func TestCacheMapSimple(t *testing.T) {
 	m.RetChan = here
 	io := m.IoPkt()
 	io.Buffer = buffer
-	io.BlockNum = 1
+	io.Address = 1
 	m.Priv = c
 
 	// First Put
@@ -97,7 +97,7 @@ func TestCacheMapSimple(t *testing.T) {
 	tests.Assert(t, m.Type == logmsg.Type)
 	tests.Assert(t, logmsg.Priv.(*CacheMap) == c)
 	tests.Assert(t, io.Blocks == logio.Blocks)
-	tests.Assert(t, io.BlockNum == logio.BlockNum)
+	tests.Assert(t, io.Address == logio.Address)
 	tests.Assert(t, logio.LogBlock == 0)
 	logmsg.Done()
 
@@ -106,11 +106,11 @@ func TestCacheMapSimple(t *testing.T) {
 	tests.Assert(t, m.Type == returnedmsg.Type)
 	tests.Assert(t, returnedmsg.Priv.(*CacheMap) == c)
 	tests.Assert(t, io.Blocks == rio.Blocks)
-	tests.Assert(t, io.BlockNum == rio.BlockNum)
+	tests.Assert(t, io.Address == rio.Address)
 	tests.Assert(t, c.stats.insertions == 1)
 	tests.Assert(t, returnedmsg.Err == nil)
 
-	val, ok := c.addressmap[io.BlockNum]
+	val, ok := c.addressmap[io.Address]
 	tests.Assert(t, val == 0)
 	tests.Assert(t, ok == true)
 
@@ -124,7 +124,7 @@ func TestCacheMapSimple(t *testing.T) {
 	m.RetChan = here
 	io = m.IoPkt()
 	io.Buffer = buffer
-	io.BlockNum = 1
+	io.Address = 1
 	m.Priv = c
 	err = c.Put(m)
 	tests.Assert(t, err == nil)
@@ -139,14 +139,14 @@ func TestCacheMapSimple(t *testing.T) {
 	tests.Assert(t, returnedmsg.Err == nil)
 	tests.Assert(t, c.stats.insertions == 2)
 
-	val, ok = c.addressmap[io.BlockNum]
+	val, ok = c.addressmap[io.Address]
 	tests.Assert(t, val == 1)
 	tests.Assert(t, ok == true)
 
 	// Send a Get
 	mg := message.NewMsgGet()
 	io = mg.IoPkt()
-	io.BlockNum = 1
+	io.Address = 1
 	io.Buffer = buffer
 	mg.RetChan = here
 
@@ -175,7 +175,7 @@ func TestCacheMapSimple(t *testing.T) {
 
 	// Send Invalidate
 	iopkt := &message.IoPkt{}
-	iopkt.BlockNum = 1
+	iopkt.Address = 1
 	iopkt.Blocks = 1
 	c.Invalidate(iopkt)
 	tests.Assert(t, c.stats.insertions == 2)
@@ -186,7 +186,7 @@ func TestCacheMapSimple(t *testing.T) {
 
 	// Send Invalidate
 	iopkt = &message.IoPkt{}
-	iopkt.BlockNum = 1
+	iopkt.Address = 1
 	iopkt.Blocks = 1
 	c.Invalidate(iopkt)
 	tests.Assert(t, c.stats.insertions == 2)
@@ -198,7 +198,7 @@ func TestCacheMapSimple(t *testing.T) {
 	// Send a Get again, but it should not be there
 	mg = message.NewMsgGet()
 	io = mg.IoPkt()
-	io.BlockNum = 1
+	io.Address = 1
 	io.Buffer = buffer
 	mg.RetChan = here
 	hitmap, err = c.Get(mg)
@@ -231,7 +231,7 @@ func TestCacheMapSimple(t *testing.T) {
 	c.Close()
 }
 
-// This test wil check that the cache tries to place
+// This test will check that the cache tries to place
 // as many contigous blocks as possible. We will initialize
 // the 8 slot cache with four slots, then remove slot 1 and 2
 // to leave the following: [X__X____]
@@ -255,12 +255,12 @@ func TestCacheMapMultiblock(t *testing.T) {
 	buffer := make([]byte, 4096)
 
 	// Initialize data in cache
-	for i := uint64(0); i < 4; i++ {
+	for i := uint32(0); i < 4; i++ {
 		m := message.NewMsgPut()
 		m.RetChan = here
 		io := m.IoPkt()
 		io.Buffer = buffer
-		io.BlockNum = i * 4096
+		io.Address = i * 4096
 
 		// First Put
 		err := c.Put(m)
@@ -270,7 +270,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 		<-here
 	}
 
-	c.Invalidate(&message.IoPkt{BlockNum: 4096, Blocks: 2})
+	c.Invalidate(&message.IoPkt{Address: 4096, Blocks: 2})
 	tests.Assert(t, c.stats.insertions == 4)
 	tests.Assert(t, c.stats.invalidatehits == 2)
 	tests.Assert(t, c.bda.bds[0].used == true)
@@ -290,7 +290,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	m.RetChan = here
 	io := m.IoPkt()
 	io.Buffer = largebuffer
-	io.BlockNum = 10 * 4096
+	io.Address = 10 * 4096
 	io.Blocks = 6
 
 	// First Put
@@ -345,7 +345,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	m.RetChan = here
 	io = m.IoPkt()
 	io.Buffer = buffer
-	io.BlockNum = 20 * 4096
+	io.Address = 20 * 4096
 	io.Blocks = 1
 	hitmap, err := c.Get(m)
 	tests.Assert(t, err == ErrNotFound)
@@ -359,7 +359,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	m.RetChan = here
 	io = m.IoPkt()
 	io.Buffer = buffer4
-	io.BlockNum = 0
+	io.Address = 0
 	io.Blocks = 4
 
 	hitmap, err = c.Get(m)
@@ -384,7 +384,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	m.RetChan = here
 	io = m.IoPkt()
 	io.Buffer = largebuffer
-	io.BlockNum = 10 * 4096
+	io.Address = 10 * 4096
 	io.Blocks = 6
 
 	hitmap, err = c.Get(m)
@@ -402,7 +402,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	retmsg := <-mocklog
 	retio := retmsg.IoPkt()
 	tests.Assert(t, retmsg.RetChan == nil)
-	tests.Assert(t, retio.BlockNum == 10*4096)
+	tests.Assert(t, retio.Address == 10*4096)
 	tests.Assert(t, retio.LogBlock == 4)
 	tests.Assert(t, retio.Blocks == 4)
 	retmsg.Done()
@@ -411,7 +411,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	retmsg = <-mocklog
 	retio = retmsg.IoPkt()
 	tests.Assert(t, retmsg.RetChan == nil)
-	tests.Assert(t, retio.BlockNum == 14*4096)
+	tests.Assert(t, retio.Address == 14*4096)
 	tests.Assert(t, retio.LogBlock == 1)
 	tests.Assert(t, retio.Blocks == 2)
 	retmsg.Done()
@@ -436,7 +436,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	m.RetChan = here
 	io = m.IoPkt()
 	io.Buffer = largebuffer
-	io.BlockNum = 10 * 4096
+	io.Address = 10 * 4096
 	io.Blocks = 6
 
 	hitmap, err = c.Get(m)
@@ -454,7 +454,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	retmsg = <-mocklog
 	retio = retmsg.IoPkt()
 	tests.Assert(t, retmsg.RetChan == nil)
-	tests.Assert(t, retio.BlockNum == 10*4096)
+	tests.Assert(t, retio.Address == 10*4096)
 	tests.Assert(t, retio.LogBlock == 4)
 	tests.Assert(t, retio.Blocks == 4)
 	retmsg.Done()
@@ -463,7 +463,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	retmsg = <-mocklog
 	retio = retmsg.IoPkt()
 	tests.Assert(t, retmsg.RetChan == nil)
-	tests.Assert(t, retio.BlockNum == 14*4096)
+	tests.Assert(t, retio.Address == 14*4096)
 	tests.Assert(t, retio.LogBlock == 1)
 	tests.Assert(t, retio.Blocks == 2)
 	retmsg.Done()
@@ -563,7 +563,7 @@ func TestCacheMapConcurrency(t *testing.T) {
 				iopkt.Buffer = make([]byte, 4096)
 
 				// Maximum "disk" size is 10 times bigger than cache
-				iopkt.BlockNum = uint64(r.Int63n(3000))
+				iopkt.Address = uint64(r.Int63n(3000))
 				msg.RetChan = returnch
 
 				// Send request

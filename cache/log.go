@@ -23,6 +23,7 @@ import (
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
 	"io"
+	"math"
 	"os"
 	"sync"
 	"syscall"
@@ -37,19 +38,21 @@ type Filer interface {
 }
 
 const (
-	KB              = 1024
-	MB              = 1024 * KB
-	GB              = 1024 * MB
-	TB              = 1024 * GB
-	Segment_Buffers = 32
+	KB                   = 1024
+	MB                   = 1024 * KB
+	GB                   = 1024 * MB
+	TB                   = 1024 * GB
+	NumberSegmentBuffers = 32
 )
 
 // Allows these functions to be mocked by tests
 var (
-	openFile = func(name string, flag int, perm os.FileMode) (Filer, error) {
+	logMaxBlocks = int64(math.Pow(2, 32))
+	openFile     = func(name string, flag int, perm os.FileMode) (Filer, error) {
 		return os.OpenFile(name, flag, perm)
 	}
 	ErrLogTooSmall = errors.New("Log is too small")
+	ErrLogTooLarge = errors.New("Log is too large")
 )
 
 type LogSave struct {
@@ -60,17 +63,17 @@ type LogSave struct {
 type IoSegment struct {
 	segmentbuf []byte
 	data       *bufferio.BufferIO
-	offset     uint64
+	offset     int64
 	written    bool
 	lock       sync.RWMutex
 }
 
 type Log struct {
 	size               uint64
-	blocksize          uint64
-	segmentsize        uint64
-	numsegments        uint64
-	blocks             uint64
+	blocksize          uint32
+	segmentsize        uint32
+	numsegments        uint32
+	blocks             uint32
 	segments           []IoSegment
 	segment            *IoSegment
 	segmentbuffers     int
@@ -78,8 +81,8 @@ type Log struct {
 	chreader           chan *IoSegment
 	chavailable        chan *IoSegment
 	wg                 sync.WaitGroup
-	current            uint64
-	blocks_per_segment uint64
+	current            uint32
+	blocks_per_segment uint32
 	fp                 Filer
 	wrapped            bool
 	stats              *logstats
@@ -90,8 +93,8 @@ type Log struct {
 }
 
 func NewLog(logfile string,
-	blocksize, blocks_per_segment, bcsize uint64,
-	usedirectio bool) (*Log, uint64, error) {
+	blocksize, blocks_per_segment, bcsize uint32,
+	usedirectio bool) (*Log, uint32, error) {
 
 	var err error
 
@@ -121,22 +124,24 @@ func NewLog(logfile string,
 	if size == 0 {
 		return nil, 0, ErrLogTooSmall
 	}
-
-	blocks := uint64(size) / blocksize
+	blocks := size / int64(blocksize)
+	if logMaxBlocks <= blocks {
+		return nil, 0, ErrLogTooLarge
+	}
 
 	// We have to make sure that the number of blocks requested
 	// fit into the segments tracked by the log
-	log.numsegments = blocks / log.blocks_per_segment
-	log.size = log.numsegments * log.segmentsize
+	log.numsegments = uint32(blocks) / log.blocks_per_segment
+	log.size = uint64(log.numsegments) * uint64(log.segmentsize)
 
 	// maximum number of aligned blocks to segments
 	log.blocks = log.numsegments * log.blocks_per_segment
 
 	// Adjust the number of segment buffers
-	if log.numsegments < Segment_Buffers {
+	if log.numsegments < NumberSegmentBuffers {
 		log.segmentbuffers = int(log.numsegments)
 	} else {
-		log.segmentbuffers = Segment_Buffers
+		log.segmentbuffers = NumberSegmentBuffers
 	}
 
 	godbc.Check(log.numsegments != 0,
@@ -276,14 +281,14 @@ func (c *Log) reader() {
 		s.data.Reset()
 
 		// Move to the next offset
-		c.current += c.segmentsize
-		c.current = c.current % c.size
+		c.current += 1
+		c.current = c.current % c.numsegments
 
 		if 0 == c.current {
 			c.stats.Wrapped()
 			c.wrapped = true
 		}
-		s.offset = c.current
+		s.offset = c.current * c.segmentsize
 
 		if c.wrapped {
 			start := time.Now()
@@ -442,7 +447,7 @@ func (l *Log) Save() (*LogSave, error) {
 	return ls, nil
 }
 
-func (l *Log) Load(ls *LogSave, blocknum uint64) error {
+func (l *Log) Load(ls *LogSave, blocknum uint32) error {
 	if ls.Size != l.size {
 		return errors.New("Loaded log metadata does not equal to current state")
 	}

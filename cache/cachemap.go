@@ -79,8 +79,8 @@ func (c *CacheMap) Invalidate(io *message.IoPkt) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	for block := uint32(0); block < io.Blocks; block++ {
-		c.invalidate(io.BlockNum + block)
+	for block := uint64(0); block < uint64(io.Blocks); block++ {
+		c.invalidate(io.Address + block)
 	}
 
 	return nil
@@ -114,16 +114,16 @@ func (c *CacheMap) Put(msg *message.Message) error {
 			msg.Add(child)
 
 			child_io := child.IoPkt()
-			child_io.BlockNum = io.BlockNum + block
+			child_io.Address = io.Address + uint64(block)
 			child_io.Buffer = SubBlockBuffer(io.Buffer, c.blocksize, block, 1)
-			child_io.LogBlock = c.put(child_io.BlockNum)
+			child_io.LogBlock = c.put(child_io.Address)
 			child_io.Blocks = 1
 
 			// Send to next one in line
 			c.pipeline <- child
 		}
 	} else {
-		io.LogBlock = c.put(io.BlockNum)
+		io.LogBlock = c.put(io.Address)
 		c.pipeline <- msg
 	}
 
@@ -146,12 +146,12 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 
 	// Create a message
 	var m *message.Message
-	var mblock uint64
+	var mblock uint32
 
-	for block := uint32(0); block < uint64(io.Blocks); block++ {
+	for block := uint32(0); block < io.Blocks; block++ {
 		// Get
-		current_block := io.BlockNum + block
-		if index, ok := c.get(current_block); ok {
+		current_address := io.Address + uint64(block)
+		if index, ok := c.get(current_address); ok {
 			hitmap[block] = true
 			hits++
 
@@ -160,7 +160,7 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 
 				// This is the first message, so let's set it up
 				m = c.create_get_submsg(msg,
-					current_block,
+					current_address,
 					index,
 					SubBlockBuffer(io.Buffer, c.blocksize, block, 1))
 				mblock = block
@@ -182,9 +182,9 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 
 					// This is the first message, so let's set it up
 					m = c.create_get_submsg(msg,
-						current_block,
+						current_address,
 						index,
-						bio.Block(block, 1))
+						SubBlockBuffer(io.Buffer, c.blocksize, block, 1))
 					mblock = block
 				}
 
@@ -209,7 +209,7 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 }
 
 func (c *CacheMap) create_get_submsg(msg *message.Message,
-	block, logblock uint32,
+	address uint64, logblock uint32,
 	buffer []byte) *message.Message {
 
 	m := message.NewMsgGet()
@@ -217,7 +217,7 @@ func (c *CacheMap) create_get_submsg(msg *message.Message,
 
 	// Set IoPkt
 	mio := m.IoPkt()
-	mio.BlockNum = block
+	mio.Address = address
 	mio.Buffer = buffer
 	mio.LogBlock = logblock
 

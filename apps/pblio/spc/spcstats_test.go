@@ -50,12 +50,12 @@ func TestSpcStats(t *testing.T) {
 
 	// Send to ASU1
 	spc1info := &spc1.Spc1Io{
-		Asu:      1,
-		Blocks:   2,
-		Isread:   true,
-		Stream:   2,
-		BlockNum: 123456,
-		When:     time.Second * 2,
+		Asu:     1,
+		Blocks:  2,
+		Isread:  true,
+		Stream:  2,
+		Address: 123456,
+		When:    time.Second * 2,
 	}
 
 	stat := &IoStats{

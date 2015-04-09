@@ -20,7 +20,7 @@ import (
 	"github.com/lpabon/godbc"
 )
 
-func SubBlockBuffer(buffer []byte, blocksize, block, nblocks uint32) {
+func SubBlockBuffer(buffer []byte, blocksize, block, nblocks uint32) []byte {
 	godbc.Require((block+nblocks)*blocksize <= len(buffer))
 	return buffer[block*blocksize : (block+nblocks)*blocksize]
 }

@@ -32,17 +32,17 @@ type BlockDescriptor struct {
 }
 
 type BlockDescriptorArraySave struct {
-	Index uint64
-	Size  uint64
+	Index uint32
+	Size  uint32
 }
 
 type BlockDescriptorArray struct {
 	bds   []BlockDescriptor
-	size  uint64
-	index uint64
+	size  uint32
+	index uint32
 }
 
-func NewBlockDescriptorArray(blocks uint64) *BlockDescriptorArray {
+func NewBlockDescriptorArray(blocks uint32) *BlockDescriptorArray {
 
 	godbc.Require(blocks > 0)
 
@@ -54,7 +54,7 @@ func NewBlockDescriptorArray(blocks uint64) *BlockDescriptorArray {
 	return c
 }
 
-func (c *BlockDescriptorArray) Insert(key uint64) (newindex, evictkey uint64, evict bool) {
+func (c *BlockDescriptorArray) Insert(key uint64) (newindex uint32, evictkey uint64, evict bool) {
 	for {
 
 		// Use the current index to check the current entry
@@ -93,11 +93,11 @@ func (c *BlockDescriptorArray) Insert(key uint64) (newindex, evictkey uint64, ev
 	}
 }
 
-func (c *BlockDescriptorArray) Using(index uint64) {
+func (c *BlockDescriptorArray) Using(index uint32) {
 	c.bds[index].clock_set = true
 }
 
-func (c *BlockDescriptorArray) Free(index uint64) {
+func (c *BlockDescriptorArray) Free(index uint32) {
 	c.bds[index].clock_set = false
 	c.bds[index].used = false
 	c.bds[index].key = INVALID_KEY
@@ -111,7 +111,7 @@ func (c *BlockDescriptorArray) Save() (*BlockDescriptorArraySave, error) {
 	return cms, nil
 }
 
-func (c *BlockDescriptorArray) Load(cms *BlockDescriptorArraySave, addressmap map[uint64]uint64) error {
+func (c *BlockDescriptorArray) Load(cms *BlockDescriptorArraySave, addressmap map[uint64]uint32) error {
 
 	if cms.Size != c.size {
 		return errors.New("Loaded metadata cache map size is not equal to the current cache map size")
