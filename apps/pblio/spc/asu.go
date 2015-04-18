@@ -18,10 +18,10 @@ package spc
 import (
 	"fmt"
 	"github.com/lpabon/godbc"
+	"github.com/pblcache/pblcache/cache"
 	"io"
 	"os"
 	"sync"
-	"syscall"
 )
 
 // Allows these functions to be mocked by tests
@@ -70,7 +70,7 @@ func (a *Asu) Open(filename string) error {
 	// Set the appropriate flags
 	flags := os.O_RDWR | os.O_EXCL
 	if a.usedirectio {
-		flags |= syscall.O_DIRECT
+		flags |= cache.OSSYNC
 	}
 
 	// Open the file
