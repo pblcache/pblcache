@@ -17,9 +17,9 @@ package spc
 
 import (
 	"errors"
+	"github.com/pblcache/pblcache/cache"
 	"github.com/pblcache/pblcache/tests"
 	"os"
-	"syscall"
 	"testing"
 )
 
@@ -59,7 +59,7 @@ func TestAsuOpenFile(t *testing.T) {
 	defer tests.Patch(&openFile,
 		func(name string, flag int, perm os.FileMode) (Filer, error) {
 			directio_set = false
-			if (flag & syscall.O_DIRECT) == syscall.O_DIRECT {
+			if (flag & cache.OSSYNC) == cache.OSSYNC {
 				directio_set = true
 			}
 
