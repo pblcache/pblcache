@@ -26,7 +26,6 @@ import (
 	"math"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -107,7 +106,7 @@ func NewLog(logfile string,
 
 	// For DirectIO
 	if usedirectio {
-		log.fp, err = openFile(logfile, syscall.O_DIRECT|os.O_RDWR|os.O_EXCL, os.ModePerm)
+		log.fp, err = openFile(logfile, OSSYNC|os.O_RDWR|os.O_EXCL, os.ModePerm)
 	} else {
 		log.fp, err = openFile(logfile, os.O_RDWR|os.O_EXCL, os.ModePerm)
 	}
