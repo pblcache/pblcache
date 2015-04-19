@@ -154,7 +154,7 @@ func TestCacheMapSimple(t *testing.T) {
 	tests.Assert(t, err == nil)
 	tests.Assert(t, hitmap.Hits == 1)
 	tests.Assert(t, hitmap.Hitmap[0] == true)
-	tests.Assert(t, hitmap.Hits == io.Blocks)
+	tests.Assert(t, hitmap.Hits == int(io.Blocks))
 
 	logmsg = <-mocklog
 	logio = logmsg.IoPkt()
@@ -255,7 +255,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	buffer := make([]byte, 4096)
 
 	// Initialize data in cache
-	for i := uint32(0); i < 4; i++ {
+	for i := uint64(0); i < 4; i++ {
 		m := message.NewMsgPut()
 		m.RetChan = here
 		io := m.IoPkt()
@@ -296,7 +296,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	// First Put
 	err := c.Put(m)
 	tests.Assert(t, err == nil)
-	for i := 0; i < io.Blocks; i++ {
+	for i := uint32(0); i < io.Blocks; i++ {
 		// Put send a message for each block
 		retmsg := <-mocklog
 		retmsg.Done()
@@ -365,7 +365,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	hitmap, err = c.Get(m)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, hitmap.Hits == 2)
-	tests.Assert(t, len(hitmap.Hitmap) == io.Blocks)
+	tests.Assert(t, len(hitmap.Hitmap) == int(io.Blocks))
 	tests.Assert(t, hitmap.Hitmap[0] == true)
 	tests.Assert(t, hitmap.Hitmap[1] == false)
 	tests.Assert(t, hitmap.Hitmap[2] == false)
@@ -390,7 +390,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	hitmap, err = c.Get(m)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, hitmap.Hits == 6)
-	tests.Assert(t, len(hitmap.Hitmap) == io.Blocks)
+	tests.Assert(t, len(hitmap.Hitmap) == int(io.Blocks))
 	tests.Assert(t, hitmap.Hitmap[0] == true)
 	tests.Assert(t, hitmap.Hitmap[1] == true)
 	tests.Assert(t, hitmap.Hitmap[2] == true)
@@ -442,7 +442,7 @@ func TestCacheMapMultiblock(t *testing.T) {
 	hitmap, err = c.Get(m)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, hitmap.Hits == 6)
-	tests.Assert(t, len(hitmap.Hitmap) == io.Blocks)
+	tests.Assert(t, len(hitmap.Hitmap) == int(io.Blocks))
 	tests.Assert(t, hitmap.Hitmap[0] == true)
 	tests.Assert(t, hitmap.Hitmap[1] == true)
 	tests.Assert(t, hitmap.Hitmap[2] == true)

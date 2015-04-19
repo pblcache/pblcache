@@ -64,7 +64,7 @@ func TestNewLog(t *testing.T) {
 // Should wrap four times
 func TestWrapPut(t *testing.T) {
 	// Simple log
-	blocks := uint64(16)
+	blocks := uint32(16)
 
 	testcachefile := tests.Tempfile()
 	err := tests.CreateFile(testcachefile, 16*4096)
@@ -78,11 +78,11 @@ func TestWrapPut(t *testing.T) {
 	l.Start()
 
 	here := make(chan *message.Message)
-	wraps := uint64(4)
+	wraps := uint32(4)
 
 	// Write enough blocks to wrap around the log
 	// as many times as determined by the value in 'wraps'
-	for io := uint8(0); io < uint8(blocks*wraps); io++ {
+	for io := uint32(0); io < (blocks * wraps); io++ {
 		buf := make([]byte, 4096)
 		buf[0] = byte(io)
 
@@ -91,7 +91,7 @@ func TestWrapPut(t *testing.T) {
 
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
-		iopkt.LogBlock = uint64(io % uint8(blocks))
+		iopkt.LogBlock = io % blocks
 
 		l.Msgchan <- msg
 		<-here
@@ -101,15 +101,15 @@ func TestWrapPut(t *testing.T) {
 	l.Close()
 
 	// Check that we have wrapped the correct number of times
-	tests.Assert(t, l.Stats().Wraps == wraps)
+	tests.Assert(t, l.Stats().Wraps == uint64(wraps))
 }
 
 func TestReadCorrectness(t *testing.T) {
 	// Simple log
-	blocks := uint64(240)
-	bs := uint64(4096)
-	blocks_per_segment := uint64(2)
-	buffercache := uint64(4096 * 10)
+	blocks := uint32(240)
+	bs := uint32(4096)
+	blocks_per_segment := uint32(2)
+	buffercache := uint32(4096 * 10)
 	testcachefile := tests.Tempfile()
 	tests.Assert(t, nil == tests.CreateFile(testcachefile, int64(blocks*4096)))
 	defer os.Remove(testcachefile)
@@ -127,7 +127,7 @@ func TestReadCorrectness(t *testing.T) {
 
 	// Write enough blocks in the log to reach
 	// the end.
-	for io := uint8(0); io < uint8(blocks); io++ {
+	for io := uint32(0); io < blocks; io++ {
 		buf := make([]byte, 4096)
 
 		// Save the block number in the buffer
@@ -141,7 +141,7 @@ func TestReadCorrectness(t *testing.T) {
 
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
-		iopkt.LogBlock = uint64(io)
+		iopkt.LogBlock = io
 
 		l.Msgchan <- msg
 		<-here
@@ -159,14 +159,14 @@ func TestReadCorrectness(t *testing.T) {
 
 	tests.Assert(t, buf[0] == uint8(blocks-1))
 
-	for io := uint8(0); io < uint8(blocks); io++ {
+	for io := uint32(0); io < blocks; io++ {
 		buf := make([]byte, 4096)
 		msg := message.NewMsgGet()
 		msg.RetChan = here
 
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
-		iopkt.LogBlock = uint64(io)
+		iopkt.LogBlock = io
 		l.Msgchan <- msg
 
 		// Wait here for the response
@@ -228,10 +228,10 @@ func logtest_response_handler(
 
 func TestLogConcurrency(t *testing.T) {
 	// Simple log
-	blocks := uint64(240)
-	bs := uint64(4096)
-	blocks_per_segment := uint64(2)
-	buffercache := uint64(4096 * 24)
+	blocks := uint32(240)
+	bs := uint32(4096)
+	blocks_per_segment := uint32(2)
+	buffercache := uint32(4096 * 24)
 	testcachefile := tests.Tempfile()
 	tests.Assert(t, nil == tests.CreateFile(testcachefile, int64(blocks*4096)))
 	defer os.Remove(testcachefile)
@@ -248,7 +248,7 @@ func TestLogConcurrency(t *testing.T) {
 	here := make(chan *message.Message)
 
 	// Fill the log
-	for io := uint8(0); io < uint8(blocks); io++ {
+	for io := uint32(0); io < blocks; io++ {
 		buf := make([]byte, 4096)
 		buf[0] = byte(io)
 
@@ -257,7 +257,7 @@ func TestLogConcurrency(t *testing.T) {
 
 		iopkt := msg.IoPkt()
 		iopkt.Buffer = buf
-		iopkt.LogBlock = uint64(io)
+		iopkt.LogBlock = io
 
 		l.Msgchan <- msg
 		<-here
@@ -285,7 +285,7 @@ func TestLogConcurrency(t *testing.T) {
 				iopkt.Buffer = make([]byte, bs)
 
 				// Maximum "disk" size is 10 times bigger than cache
-				iopkt.LogBlock = uint64(r.Int63n(int64(blocks)))
+				iopkt.LogBlock = uint32(r.Int31n(int32(blocks)))
 				msg.RetChan = returnch
 
 				// Send request
@@ -302,7 +302,7 @@ func TestLogConcurrency(t *testing.T) {
 	// Write to the log while the readers are reading
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for wrap := 0; wrap < 30; wrap++ {
-		for io := uint8(0); io < uint8(blocks); io++ {
+		for io := uint32(0); io < blocks; io++ {
 			buf := make([]byte, 4096)
 			buf[0] = byte(io)
 
@@ -311,7 +311,7 @@ func TestLogConcurrency(t *testing.T) {
 
 			iopkt := msg.IoPkt()
 			iopkt.Buffer = buf
-			iopkt.LogBlock = uint64(io)
+			iopkt.LogBlock = io
 
 			msg.TimeStart()
 			l.Msgchan <- msg
