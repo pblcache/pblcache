@@ -29,7 +29,6 @@ func TestGetIoPkt(t *testing.T) {
 	tests.Assert(t, iopkt.LogBlock == 0)
 	tests.Assert(t, iopkt.Buffer == nil)
 	tests.Assert(t, iopkt.Address == 0)
-	tests.Assert(t, iopkt.Obj == 0)
 	tests.Assert(t, m.RetChan == c)
 	tests.Assert(t, m.Type == MsgGet)
 }
@@ -53,7 +52,6 @@ func TestPutIoPkt(t *testing.T) {
 	tests.Assert(t, iopkt.LogBlock == 0)
 	tests.Assert(t, iopkt.Buffer == nil)
 	tests.Assert(t, iopkt.Address == 0)
-	tests.Assert(t, iopkt.Obj == 0)
 	tests.Assert(t, m.RetChan == c)
 	tests.Assert(t, m.Type == MsgPut)
 }
@@ -66,7 +64,6 @@ func TestInvalidateIoPkt(t *testing.T) {
 	tests.Assert(t, iopkt.LogBlock == 0)
 	tests.Assert(t, iopkt.Buffer == nil)
 	tests.Assert(t, iopkt.Address == 0)
-	tests.Assert(t, iopkt.Obj == 0)
 	tests.Assert(t, m.RetChan == c)
 	tests.Assert(t, m.Type == MsgGet)
 }

@@ -97,12 +97,12 @@ func main() {
 	defer fp.Close()
 
 	// Setup number of blocks
-	blocksize_bytes := uint64(blocksize * KB)
+	blocksize_bytes := uint32(blocksize * KB)
 
 	// Open cache
 	var c *cache.CacheMap
 	var log *cache.Log
-	var logblocks uint64
+	var logblocks uint32
 
 	// Show banner
 	fmt.Println("-----")

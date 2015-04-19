@@ -37,7 +37,7 @@ func readandstore(fp io.ReaderAt,
 	io := m.IoPkt()
 	io.Address = cache.Address64(cache.Address{Devid: devid, Lba: offset})
 	io.Buffer = buffer
-	io.Blocks = int(nblocks)
+	io.Blocks = uint32(nblocks)
 
 	c.Put(m)
 }
@@ -59,7 +59,7 @@ func read(fp io.ReaderAt,
 	iopkt := msg.IoPkt()
 	iopkt.Buffer = buffer
 	iopkt.Address = cacheoffset
-	iopkt.Blocks = nblocks
+	iopkt.Blocks = uint32(nblocks)
 
 	msgs := 0
 	hitpkt, err := c.Get(msg)
@@ -75,7 +75,7 @@ func read(fp io.ReaderAt,
 		io := m.IoPkt()
 		io.Address = cacheoffset
 		io.Buffer = buffer
-		io.Blocks = nblocks
+		io.Blocks = uint32(nblocks)
 		c.Put(m)
 		msgs++
 
@@ -152,7 +152,7 @@ func write(fp io.WriterAt,
 	// Send invalidates for each block
 	iopkt := &message.IoPkt{
 		Address: cacheoffset,
-		Blocks:  nblocks,
+		Blocks:  uint32(nblocks),
 	}
 	c.Invalidate(iopkt)
 
@@ -164,7 +164,7 @@ func write(fp io.WriterAt,
 	msg := message.NewMsgPut()
 	msg.RetChan = here
 	iopkt = msg.IoPkt()
-	iopkt.Blocks = nblocks
+	iopkt.Blocks = uint32(nblocks)
 	iopkt.Address = cacheoffset
 	iopkt.Buffer = buffer
 	c.Put(msg)

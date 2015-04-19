@@ -26,11 +26,11 @@ import (
 func TestIoMeterCollect(t *testing.T) {
 
 	spc1info := &spc1.Spc1Io{
-		Asu:     1,
-		Blocks:  1,
-		Stream:  2,
-		Address: 123456,
-		When:    time.Second * 2,
+		Asu:    1,
+		Blocks: 1,
+		Stream: 2,
+		Offset: 123456,
+		When:   time.Second * 2,
 	}
 
 	stat := &IoStats{
@@ -59,11 +59,11 @@ func TestIoMeterCollect(t *testing.T) {
 
 func TestIoMeterCsvDelta(t *testing.T) {
 	spc1info := &spc1.Spc1Io{
-		Asu:     1,
-		Blocks:  1,
-		Stream:  2,
-		Address: 123456,
-		When:    time.Second * 2,
+		Asu:    1,
+		Blocks: 1,
+		Stream: 2,
+		Offset: 123456,
+		When:   time.Second * 2,
 	}
 
 	stat := &IoStats{

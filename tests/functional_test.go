@@ -84,7 +84,7 @@ func response_handler(t *testing.T,
 }
 
 func cacheio(t *testing.T, c *cache.CacheMap, log *cache.Log,
-	actual_blocks, blocksize uint64) {
+	actual_blocks, blocksize uint32) {
 	var wgIo, wgRet sync.WaitGroup
 
 	// Start up response server
@@ -103,7 +103,7 @@ func cacheio(t *testing.T, c *cache.CacheMap, log *cache.Log,
 		wgIo.Add(1)
 		go func() {
 			defer wgIo.Done()
-			z := zipf.NewZipfWorkload(actual_blocks*10, 60)
+			z := zipf.NewZipfWorkload(uint64(actual_blocks)*10, 60)
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 			// Each client to send 5k IOs
@@ -190,11 +190,11 @@ func cacheio(t *testing.T, c *cache.CacheMap, log *cache.Log,
 }
 
 func TestSimpleCache(t *testing.T) {
-	logsize := uint64(100 * cache.MB)
-	blocksize := uint64(4 * cache.KB)
-	blocks := uint64(logsize / blocksize)
-	blocks_per_segment := uint64(32)
-	bcsize := uint64(1 * cache.MB)
+	logsize := uint32(100 * cache.MB)
+	blocksize := uint32(4 * cache.KB)
+	blocks := uint32(logsize / blocksize)
+	blocks_per_segment := uint32(32)
+	bcsize := uint32(1 * cache.MB)
 
 	logfile := Tempfile()
 	err := CreateFile(logfile, int64(blocks*blocksize))
