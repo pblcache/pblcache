@@ -115,8 +115,8 @@ func (a *Asu) ioAt(b []byte, offset int64, isread bool) (n int, err error) {
 	godbc.Check(head_fp < len(a.fps), head_fp, len(a.fps))
 
 	// Tail
-	tail_fp := int((offset + int64(len(b))) / a.fpsize)
-	godbc.Check(tail_fp < len(a.fps), tail_fp, len(a.fps))
+	tail_fp := int((offset + int64(len(b))) / (a.fpsize + 4*KB))
+	godbc.Check(tail_fp < len(a.fps), tail_fp, len(a.fps), offset, len(b), a.fpsize)
 
 	if head_fp == tail_fp {
 		if isread {
