@@ -61,6 +61,133 @@ func TestNewLog(t *testing.T) {
 	l.Close()
 }
 
+func TestLogMultiBlock(t *testing.T) {
+
+	// 256 blocks available in the log
+	seeklen := int64(256 * 4096)
+
+	// Setup Mockfile
+	mockfile := tests.NewMockFile()
+	mockfile.MockSeek = func(offset int64, whence int) (int64, error) {
+		return seeklen, nil
+	}
+
+	mock_byteswritten := 0
+	mock_written := 0
+	mock_off_written := int64(0)
+	mockfile.MockWriteAt = func(p []byte, off int64) (n int, err error) {
+		mock_written++
+		mock_off_written = off
+		mock_byteswritten += len(p)
+		return len(p), nil
+	}
+
+	mock_bytesread := 0
+	mock_read := 0
+	mock_off_read := int64(0)
+	mockfile.MockReadAt = func(p []byte, off int64) (n int, err error) {
+		mock_read++
+		mock_off_read = off
+		mock_bytesread += len(p)
+		return len(p), nil
+	}
+
+	// Mock openFile
+	defer tests.Patch(&openFile,
+		func(name string, flag int, perm os.FileMode) (Filer, error) {
+			return mockfile, nil
+		}).Restore()
+
+	// Simple log
+	l, blocks, err := NewLog("file", 4096, 4, 0, false)
+	tests.Assert(t, err == nil)
+	tests.Assert(t, l != nil)
+	tests.Assert(t, blocks == 256)
+	l.Start()
+
+	// Send 8 blocks
+	here := make(chan *message.Message)
+	m := message.NewMsgPut()
+	iopkt := m.IoPkt()
+	m.RetChan = here
+	iopkt.Buffer = make([]byte, 8*4096)
+	iopkt.Blocks = 8
+
+	for block := uint32(0); block < iopkt.Blocks; block++ {
+		child := message.NewMsgPut()
+		m.Add(child)
+
+		child_io := child.IoPkt()
+		child_io.Address = iopkt.Address + uint64(block)
+		child_io.Buffer = SubBlockBuffer(iopkt.Buffer, 4096, block, 1)
+		child_io.LogBlock = block
+		child_io.Blocks = 1
+
+		l.Msgchan <- child
+	}
+
+	m.Done()
+	<-here
+
+	tests.Assert(t, l.segment.offset == int64(l.segmentsize))
+	tests.Assert(t, l.segment.written == true)
+	tests.Assert(t, mock_byteswritten == 4*4096)
+	tests.Assert(t, mock_written == 1)
+	tests.Assert(t, mock_off_written == 0)
+	tests.Assert(t, mock_read == 0)
+
+	// At this point we have 4 blocks written to the log storage
+	// and 4 blocks in the current segment.
+
+	// Read log blocks 0-3
+	m = message.NewMsgGet()
+	iopkt = m.IoPkt()
+	m.RetChan = here
+	iopkt.Blocks = 4
+	iopkt.Buffer = make([]byte, 4*4096)
+	iopkt.LogBlock = 0
+
+	mock_written = 0
+	mock_byteswritten = 0
+	l.Msgchan <- m
+	<-here
+
+	tests.Assert(t, l.segment.offset == int64(l.segmentsize))
+	tests.Assert(t, l.segment.written == true)
+	tests.Assert(t, mock_byteswritten == 0)
+	tests.Assert(t, mock_written == 0)
+	tests.Assert(t, mock_read == 1)
+	tests.Assert(t, mock_bytesread == 4*4096)
+	tests.Assert(t, mock_off_read == 0)
+
+	// Now read log blocks 1,2,3,4,5.  Blocks 1,2,3 will be on the storage
+	// device, and blocks 4,5 will be in ram
+	m = message.NewMsgGet()
+	iopkt = m.IoPkt()
+	m.RetChan = here
+	iopkt.Blocks = 5
+	iopkt.Buffer = make([]byte, 5*4096)
+	iopkt.LogBlock = 1
+
+	mock_written = 0
+	mock_byteswritten = 0
+	mock_bytesread = 0
+	mock_read = 0
+	l.Msgchan <- m
+	<-here
+
+	tests.Assert(t, l.segment.offset == int64(l.segmentsize))
+	tests.Assert(t, l.segment.written == true)
+	tests.Assert(t, mock_byteswritten == 0)
+	tests.Assert(t, mock_written == 0)
+	tests.Assert(t, mock_read == 1)
+	tests.Assert(t, mock_bytesread == 3*4096)
+	tests.Assert(t, mock_off_read == 1*4096)
+
+	// Cleanup
+	l.Close()
+}
+
 // Should wrap four times
 func TestWrapPut(t *testing.T) {
 	// Simple log

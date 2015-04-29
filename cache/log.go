@@ -399,7 +399,7 @@ func (c *Log) get(msg *message.Message) error {
 			io := readmsg.IoPkt()
 			io.Buffer = SubBlockBuffer(iopkt.Buffer,
 				c.blocksize,
-				block,
+				io.LogBlock,
 				io.Blocks)
 
 		} else if readmsg != nil {
