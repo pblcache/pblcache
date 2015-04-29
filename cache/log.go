@@ -362,6 +362,7 @@ func (c *Log) get(msg *message.Message) error {
 	iopkt := msg.IoPkt()
 
 	var readmsg *message.Message
+	var readmsg_block uint32
 	for block := uint32(0); block < iopkt.Blocks; block++ {
 		ramhit := false
 		index := iopkt.LogBlock + block
@@ -392,6 +393,7 @@ func (c *Log) get(msg *message.Message) error {
 				io := readmsg.IoPkt()
 				io.LogBlock = index
 				io.Blocks = 1
+				readmsg_block = block
 			} else {
 				readmsg.IoPkt().Blocks++
 			}
@@ -399,7 +401,7 @@ func (c *Log) get(msg *message.Message) error {
 			io := readmsg.IoPkt()
 			io.Buffer = SubBlockBuffer(iopkt.Buffer,
 				c.blocksize,
-				io.LogBlock,
+				readmsg_block,
 				io.Blocks)
 
 		} else if readmsg != nil {
