@@ -147,10 +147,10 @@ func TestAsuIoAt(t *testing.T) {
 	usedirectio := true
 	asu := NewAsu(usedirectio)
 
-	// Setup Head
+	// Setup Head - 10 4k blocks
 	head := tests.NewMockFile()
 	head.MockSeek = func(offset int64, whence int) (int64, error) {
-		return 10 * KB, nil
+		return 10 * 4 * KB, nil
 	}
 
 	var (
@@ -173,10 +173,10 @@ func TestAsuIoAt(t *testing.T) {
 		return len(p), nil
 	}
 
-	// Setup Tail
+	// Setup Tail - 12 4K blocks
 	tail := tests.NewMockFile()
 	tail.MockSeek = func(offset int64, whence int) (int64, error) {
-		return 8 * KB, nil
+		return 12 * 4 * KB, nil
 	}
 
 	var (
@@ -216,23 +216,38 @@ func TestAsuIoAt(t *testing.T) {
 	tests.Assert(t, err == nil)
 
 	// Write small, it should not over flow into file2
-	small := make([]byte, 512)
-	head_check_offset = int64(4*KB - len(small))
+	small := make([]byte, 4*KB)
+	head_check_offset = 4 * KB
 	head_check_p_len = len(small)
 	tail_called = false
 	head_called = false
-	n, err := asu.WriteAt(small, int64(4*KB-len(small)))
+	n, err := asu.WriteAt(small, 4*KB)
 	tests.Assert(t, n == len(small))
 	tests.Assert(t, err == nil)
 	tests.Assert(t, head_called == true)
 	tests.Assert(t, tail_called == false)
 
-	// Write large, should go across files
-	large := make([]byte, 10*KB)
-	head_check_offset = 4 * KB
-	head_check_p_len = 4 * KB
+	// Write large buffer.  It should only write
+	// to the first file since it the buffer is exactly
+	// the same size as the size of the file.
+	large := make([]byte, 10*4*KB)
+	head_check_offset = 0
+	head_check_p_len = 10 * 4 * KB
 	tail_check_offset = 0
-	tail_check_p_len = 6 * KB
+	tail_check_p_len = 0
+	tail_called = false
+	head_called = true
+	n, err = asu.WriteAt(large, 0)
+	tests.Assert(t, n == len(large))
+	tests.Assert(t, err == nil)
+	tests.Assert(t, head_called == true)
+	tests.Assert(t, tail_called == false)
+
+	// Write large, should go across files
+	head_check_offset = 1 * 4 * KB
+	head_check_p_len = 9 * 4 * KB
+	tail_check_offset = 0
+	tail_check_p_len = 1 * 4 * KB
 	tail_called = false
 	head_called = false
 	n, err = asu.WriteAt(large, 4*KB)
@@ -243,24 +258,24 @@ func TestAsuIoAt(t *testing.T) {
 
 	// Repeat with ReadAt
 	// Read small, it should not over flow into file2
-	head_check_offset = int64(4*KB - len(small))
+	head_check_offset = 4 * KB
 	head_check_p_len = len(small)
 	tail_called = false
 	head_called = false
-	n, err = asu.ReadAt(small, int64(4*KB-len(small)))
+	n, err = asu.ReadAt(small, 4*KB)
 	tests.Assert(t, n == len(small))
 	tests.Assert(t, err == nil)
 	tests.Assert(t, head_called == true)
 	tests.Assert(t, tail_called == false)
 
 	// Write large, should go across files
-	head_check_offset = 4 * KB
-	head_check_p_len = 4 * KB
+	head_check_offset = 9 * 4 * KB
+	head_check_p_len = 1 * 4 * KB
 	tail_check_offset = 0
-	tail_check_p_len = 6 * KB
+	tail_check_p_len = 9 * 4 * KB
 	tail_called = false
 	head_called = false
-	n, err = asu.ReadAt(large, 4*KB)
+	n, err = asu.ReadAt(large, 9*4*KB)
 	tests.Assert(t, n == len(large))
 	tests.Assert(t, err == nil)
 	tests.Assert(t, head_called == true)
