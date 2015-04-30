@@ -20,28 +20,25 @@ import (
 )
 
 type IoPkt struct {
-	// Object descriptor
-	Obj uint16
-
-	// Offset in either bytes or LBA
-	Offset uint64
+	// Backend id + offset
+	Address uint64
 
 	// Buffer transfer data in or out
 	Buffer []byte
 
 	// Block number on the Log to read
 	// from or write to
-	BlockNum uint64
+	LogBlock uint32
 
 	// Number of blocks
-	Nblocks int
+	Blocks uint32
 }
 
 func newio(msgtype MsgType) *Message {
 	return &Message{
 		Type: msgtype,
 		Pkg: &IoPkt{
-			Nblocks: 1,
+			Blocks: 1,
 		},
 	}
 }
@@ -60,13 +57,11 @@ func (m *Message) IoPkt() *IoPkt {
 
 func (i *IoPkt) String() string {
 	return fmt.Sprintf("IoPkt{"+
-		"Obj:%v "+
-		"Offset:%v "+
-		"BlockNum:%v "+
-		"Nblocks:%v"+
+		"Address:%v "+
+		"LogBlock:%v "+
+		"Blocks:%v"+
 		"}",
-		i.Obj,
-		i.Offset,
-		i.BlockNum,
-		i.Nblocks)
+		i.Address,
+		i.LogBlock,
+		i.Blocks)
 }

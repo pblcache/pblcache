@@ -23,6 +23,7 @@ import (
 	"github.com/lpabon/godbc"
 	"github.com/pblcache/pblcache/message"
 	"io"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -36,19 +37,21 @@ type Filer interface {
 }
 
 const (
-	KB              = 1024
-	MB              = 1024 * KB
-	GB              = 1024 * MB
-	TB              = 1024 * GB
-	Segment_Buffers = 32
+	KB                   = 1024
+	MB                   = 1024 * KB
+	GB                   = 1024 * MB
+	TB                   = 1024 * GB
+	NumberSegmentBuffers = 32
 )
 
 // Allows these functions to be mocked by tests
 var (
-	openFile = func(name string, flag int, perm os.FileMode) (Filer, error) {
+	logMaxBlocks = int64(math.Pow(2, 32))
+	openFile     = func(name string, flag int, perm os.FileMode) (Filer, error) {
 		return os.OpenFile(name, flag, perm)
 	}
 	ErrLogTooSmall = errors.New("Log is too small")
+	ErrLogTooLarge = errors.New("Log is too large")
 )
 
 type LogSave struct {
@@ -59,17 +62,17 @@ type LogSave struct {
 type IoSegment struct {
 	segmentbuf []byte
 	data       *bufferio.BufferIO
-	offset     uint64
+	offset     int64
 	written    bool
 	lock       sync.RWMutex
 }
 
 type Log struct {
 	size               uint64
-	blocksize          uint64
-	segmentsize        uint64
-	numsegments        uint64
-	blocks             uint64
+	blocksize          uint32
+	segmentsize        uint32
+	numsegments        uint32
+	blocks             uint32
 	segments           []IoSegment
 	segment            *IoSegment
 	segmentbuffers     int
@@ -77,8 +80,8 @@ type Log struct {
 	chreader           chan *IoSegment
 	chavailable        chan *IoSegment
 	wg                 sync.WaitGroup
-	current            uint64
-	blocks_per_segment uint64
+	current            uint32
+	blocks_per_segment uint32
 	fp                 Filer
 	wrapped            bool
 	stats              *logstats
@@ -89,8 +92,8 @@ type Log struct {
 }
 
 func NewLog(logfile string,
-	blocksize, blocks_per_segment, bcsize uint64,
-	usedirectio bool) (*Log, uint64, error) {
+	blocksize, blocks_per_segment, bcsize uint32,
+	usedirectio bool) (*Log, uint32, error) {
 
 	var err error
 
@@ -120,22 +123,24 @@ func NewLog(logfile string,
 	if size == 0 {
 		return nil, 0, ErrLogTooSmall
 	}
-
-	blocks := uint64(size) / blocksize
+	blocks := size / int64(blocksize)
+	if logMaxBlocks <= blocks {
+		return nil, 0, ErrLogTooLarge
+	}
 
 	// We have to make sure that the number of blocks requested
 	// fit into the segments tracked by the log
-	log.numsegments = blocks / log.blocks_per_segment
-	log.size = log.numsegments * log.segmentsize
+	log.numsegments = uint32(blocks) / log.blocks_per_segment
+	log.size = uint64(log.numsegments) * uint64(log.segmentsize)
 
 	// maximum number of aligned blocks to segments
 	log.blocks = log.numsegments * log.blocks_per_segment
 
 	// Adjust the number of segment buffers
-	if log.numsegments < Segment_Buffers {
+	if log.numsegments < NumberSegmentBuffers {
 		log.segmentbuffers = int(log.numsegments)
 	} else {
-		log.segmentbuffers = Segment_Buffers
+		log.segmentbuffers = NumberSegmentBuffers
 	}
 
 	godbc.Check(log.numsegments != 0,
@@ -190,11 +195,11 @@ func (c *Log) logread() {
 	defer c.wg.Done()
 	for m := range c.logreaders {
 		iopkt := m.IoPkt()
-		offset := c.offset(iopkt.BlockNum)
+		offset := c.offset(iopkt.LogBlock)
 
 		// Read from storage
 		start := time.Now()
-		n, err := c.fp.ReadAt(iopkt.Buffer, int64(offset))
+		n, err := c.fp.ReadAt(iopkt.Buffer, offset)
 		end := time.Now()
 		c.stats.ReadTimeRecord(end.Sub(start))
 
@@ -251,7 +256,7 @@ func (c *Log) writer() {
 	for s := range c.chwriting {
 		if s.written {
 			start := time.Now()
-			n, err := c.fp.WriteAt(s.segmentbuf, int64(s.offset))
+			n, err := c.fp.WriteAt(s.segmentbuf, s.offset)
 			end := time.Now()
 			s.written = false
 
@@ -275,18 +280,18 @@ func (c *Log) reader() {
 		s.data.Reset()
 
 		// Move to the next offset
-		c.current += c.segmentsize
-		c.current = c.current % c.size
+		c.current += 1
+		c.current = c.current % c.numsegments
 
 		if 0 == c.current {
 			c.stats.Wrapped()
 			c.wrapped = true
 		}
-		s.offset = c.current
+		s.offset = int64(c.current) * int64(c.segmentsize)
 
 		if c.wrapped {
 			start := time.Now()
-			n, err := c.fp.ReadAt(s.segmentbuf, int64(s.offset))
+			n, err := c.fp.ReadAt(s.segmentbuf, s.offset)
 			end := time.Now()
 			c.stats.SegmentReadTimeRecord(end.Sub(start))
 			godbc.Check(n == len(s.segmentbuf))
@@ -307,34 +312,36 @@ func (c *Log) sync() {
 	c.segment = <-c.chavailable
 }
 
-func (c *Log) offset(index uint64) uint64 {
-	return (index * c.blocksize)
+// Returns the offset in bytes
+func (c *Log) offset(index uint32) int64 {
+	return int64(index) * int64(c.blocksize)
 }
 
-func (c *Log) inRange(index uint64, s *IoSegment) bool {
+// Determines if the index is in the specified segment
+func (c *Log) inRange(index uint32, s *IoSegment) bool {
 	offset := c.offset(index)
 
 	return ((offset >= s.offset) &&
-		(offset < (s.offset + c.segmentsize)))
+		(offset < (s.offset + int64(c.segmentsize))))
 }
 
 func (c *Log) put(msg *message.Message) error {
 
 	iopkt := msg.IoPkt()
-	godbc.Require(iopkt.BlockNum < c.blocks)
+	godbc.Require(iopkt.LogBlock < c.blocks)
 
 	// Make sure the block number curresponds to the
 	// current segment.  If not, c.sync() will place
 	// the next available segment into c.segment
-	for !c.inRange(iopkt.BlockNum, c.segment) {
+	for !c.inRange(iopkt.LogBlock, c.segment) {
 		c.sync()
 	}
 
 	// get log offset
-	offset := c.offset(iopkt.BlockNum)
+	offset := c.offset(iopkt.LogBlock)
 
 	// Write to current buffer
-	n, err := c.segment.data.WriteAt(iopkt.Buffer, int64(offset-c.segment.offset))
+	n, err := c.segment.data.WriteAt(iopkt.Buffer, offset-c.segment.offset)
 	godbc.Check(n == len(iopkt.Buffer))
 	godbc.Check(err == nil)
 
@@ -355,24 +362,24 @@ func (c *Log) get(msg *message.Message) error {
 	iopkt := msg.IoPkt()
 
 	var readmsg *message.Message
-	orig_nblocks := iopkt.Nblocks
-	for block := 0; block < iopkt.Nblocks; block++ {
+	var readmsg_block uint32
+	for block := uint32(0); block < iopkt.Blocks; block++ {
 		ramhit := false
-		blocknumber := iopkt.BlockNum + uint64(block)
-		offset := c.offset(blocknumber)
+		index := iopkt.LogBlock + block
+		offset := c.offset(index)
 
 		// Check if the data is in RAM.  Go through each buffered segment
 		for i := 0; i < c.segmentbuffers; i++ {
 
 			c.segments[i].lock.RLock()
-			if c.inRange(blocknumber, &c.segments[i]) {
+			if c.inRange(index, &c.segments[i]) {
 
 				ramhit = true
-				n, err = c.segments[i].data.ReadAt(iopkt.Buffer[c.blocksize*uint64(block):uint64(block+1)*c.blocksize],
-					int64(offset-c.segments[i].offset))
+				n, err = c.segments[i].data.ReadAt(SubBlockBuffer(iopkt.Buffer, c.blocksize, block, 1),
+					offset-c.segments[i].offset)
 
 				godbc.Check(err == nil, err, block, offset, i)
-				godbc.Check(uint64(n) == c.blocksize)
+				godbc.Check(uint32(n) == c.blocksize)
 				c.stats.RamHit()
 			}
 			c.segments[i].lock.RUnlock()
@@ -380,34 +387,34 @@ func (c *Log) get(msg *message.Message) error {
 
 		// We did not find it in ram, let's start making a message
 		if !ramhit {
-			orig_nblocks--
 			if readmsg == nil {
 				readmsg = message.NewMsgGet()
 				msg.Add(readmsg)
 				io := readmsg.IoPkt()
-				io.BlockNum = iopkt.BlockNum + uint64(block)
-				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
-				io.Nblocks = 1
+				io.LogBlock = index
+				io.Blocks = 1
+				readmsg_block = block
 			} else {
-				io := readmsg.IoPkt()
-				io.Nblocks++
-				io.Buffer = iopkt.Buffer[(iopkt.BlockNum-io.BlockNum)*c.blocksize : uint64(block+1)*c.blocksize]
+				readmsg.IoPkt().Blocks++
 			}
-		} else {
-			if readmsg != nil {
-				c.logreaders <- readmsg
-				readmsg = nil
-			}
+
+			io := readmsg.IoPkt()
+			io.Buffer = SubBlockBuffer(iopkt.Buffer,
+				c.blocksize,
+				readmsg_block,
+				io.Blocks)
+
+		} else if readmsg != nil {
+			// We have a pending message, but the
+			// buffer block was not contiguous.
+			c.logreaders <- readmsg
+			readmsg = nil
 		}
 	}
 
+	// Send pending read
 	if readmsg != nil {
 		c.logreaders <- readmsg
-	}
-
-	if iopkt.Nblocks != orig_nblocks {
-		msg.Err = ErrPending
-		iopkt.Nblocks = orig_nblocks
 	}
 
 	return nil
@@ -447,15 +454,13 @@ func (l *Log) Save() (*LogSave, error) {
 	return ls, nil
 }
 
-func (l *Log) Load(ls *LogSave, blocknum uint64) error {
+func (l *Log) Load(ls *LogSave, blocknum uint32) error {
 	if ls.Size != l.size {
 		return errors.New("Loaded log metadata does not equal to current state")
 	}
 
 	l.wrapped = ls.Wrapped
-
-	segment := uint64(blocknum / l.blocks_per_segment)
-	l.current = segment * l.segmentsize
+	l.current = blocknum / l.blocks_per_segment
 
 	return nil
 }
@@ -473,11 +478,10 @@ func (l *Log) Start() {
 
 	// Set up the first available segment
 	l.segment = <-l.chreader
-	l.segment.offset = l.current
+	l.segment.offset = int64(l.current) * int64(l.segmentsize)
 	if l.wrapped {
-		l.segments[0].offset = l.current
-		n, err := l.fp.ReadAt(l.segments[0].segmentbuf, int64(l.segments[0].offset))
-		godbc.Check(n == len(l.segments[0].segmentbuf), n)
+		n, err := l.fp.ReadAt(l.segment.segmentbuf, l.segment.offset)
+		godbc.Check(n == len(l.segment.segmentbuf), n)
 		godbc.Check(err == nil)
 	}
 

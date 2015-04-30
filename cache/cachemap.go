@@ -28,15 +28,15 @@ import (
 type CacheMapSave struct {
 	Bda               *BlockDescriptorArraySave
 	Log               *LogSave
-	Addressmap        map[uint64]uint64
-	Blocks, Blocksize uint64
+	Addressmap        map[uint64]uint32
+	Blocks, Blocksize uint32
 }
 
 type CacheMap struct {
 	stats             *cachestats
 	bda               *BlockDescriptorArray
-	addressmap        map[uint64]uint64
-	blocks, blocksize uint64
+	addressmap        map[uint64]uint32
+	blocks, blocksize uint32
 	pipeline          chan *message.Message
 	lock              sync.Mutex
 }
@@ -47,12 +47,10 @@ type HitmapPkt struct {
 }
 
 var (
-	ErrNotFound  = errors.New("None of the blocks where found")
-	ErrSomeFound = errors.New("Only some of the blocks where found")
-	ErrPending   = errors.New("New messages where created and are pending")
+	ErrNotFound = errors.New("None of the blocks where found")
 )
 
-func NewCacheMap(blocks, blocksize uint64, pipeline chan *message.Message) *CacheMap {
+func NewCacheMap(blocks, blocksize uint32, pipeline chan *message.Message) *CacheMap {
 
 	godbc.Require(blocks > 0)
 	godbc.Require(pipeline != nil)
@@ -64,7 +62,7 @@ func NewCacheMap(blocks, blocksize uint64, pipeline chan *message.Message) *Cach
 
 	cache.stats = &cachestats{}
 	cache.bda = NewBlockDescriptorArray(cache.blocks)
-	cache.addressmap = make(map[uint64]uint64)
+	cache.addressmap = make(map[uint64]uint32)
 
 	godbc.Ensure(cache.blocks > 0)
 	godbc.Ensure(cache.bda != nil)
@@ -81,8 +79,8 @@ func (c *CacheMap) Invalidate(io *message.IoPkt) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	for block := 0; block < io.Nblocks; block++ {
-		c.invalidate(io.Offset + uint64(block)*c.blocksize)
+	for block := uint64(0); block < uint64(io.Blocks); block++ {
+		c.invalidate(io.Address + block)
 	}
 
 	return nil
@@ -100,7 +98,7 @@ func (c *CacheMap) Put(msg *message.Message) error {
 
 	io := msg.IoPkt()
 
-	if io.Nblocks > 1 {
+	if io.Blocks > 1 {
 		// Have parent message wait for its children
 		defer msg.Done()
 
@@ -111,22 +109,21 @@ func (c *CacheMap) Put(msg *message.Message) error {
 		// We do need to send each one sperately now so that the cache
 		// policy hopefully aligns them one after the other.
 		//
-		for block := 0; block < io.Nblocks; block++ {
+		for block := uint32(0); block < io.Blocks; block++ {
 			child := message.NewMsgPut()
-			buffer_offset := uint64(block) * c.blocksize
 			msg.Add(child)
 
 			child_io := child.IoPkt()
-			child_io.Offset = io.Offset + buffer_offset
-			child_io.Buffer = io.Buffer[buffer_offset : buffer_offset+c.blocksize]
-			child_io.BlockNum = c.put(child_io.Offset)
-			child_io.Nblocks = 1
+			child_io.Address = io.Address + uint64(block)
+			child_io.Buffer = SubBlockBuffer(io.Buffer, c.blocksize, block, 1)
+			child_io.LogBlock = c.put(child_io.Address)
+			child_io.Blocks = 1
 
 			// Send to next one in line
 			c.pipeline <- child
 		}
 	} else {
-		io.BlockNum = c.put(io.Offset)
+		io.LogBlock = c.put(io.Address)
 		c.pipeline <- msg
 	}
 
@@ -144,18 +141,17 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 	defer c.lock.Unlock()
 
 	io := msg.IoPkt()
-	hitmap := make([]bool, io.Nblocks)
+	hitmap := make([]bool, io.Blocks)
 	hits := 0
 
 	// Create a message
 	var m *message.Message
-	var mblock uint64
+	var mblock uint32
 
-	for block := uint64(0); block < uint64(io.Nblocks); block++ {
+	for block := uint32(0); block < io.Blocks; block++ {
 		// Get
-		buffer_offset := block * c.blocksize
-		current_offset := io.Offset + buffer_offset
-		if index, ok := c.get(current_offset); ok {
+		current_address := io.Address + uint64(block)
+		if index, ok := c.get(current_address); ok {
 			hitmap[block] = true
 			hits++
 
@@ -164,10 +160,9 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 
 				// This is the first message, so let's set it up
 				m = c.create_get_submsg(msg,
-					current_offset,
-					buffer_offset,
+					current_address,
 					index,
-					io.Buffer[buffer_offset:(block+1)*c.blocksize])
+					SubBlockBuffer(io.Buffer, c.blocksize, block, 1))
 				mblock = block
 			} else {
 				// Let's check what block we are using starting from the block
@@ -176,21 +171,20 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 
 				// If the next block is available on the log after this block, then
 				// we can optimize the read by reading a larger amount from the log.
-				if m.IoPkt().BlockNum+numblocks == index && hitmap[block-1] == true {
+				if m.IoPkt().LogBlock+numblocks == index && hitmap[block-1] == true {
 					// It is the next in both the cache and storage device
 					mio := m.IoPkt()
-					mio.Buffer = io.Buffer[mblock*c.blocksize : (mblock+numblocks+1)*c.blocksize]
-					mio.Nblocks++
+					mio.Buffer = SubBlockBuffer(io.Buffer, c.blocksize, mblock, numblocks)
+					mio.Blocks++
 				} else {
 					// Send the previous one
 					c.pipeline <- m
 
 					// This is the first message, so let's set it up
 					m = c.create_get_submsg(msg,
-						current_offset,
-						buffer_offset,
+						current_address,
 						index,
-						io.Buffer[buffer_offset:(block+1)*c.blocksize])
+						SubBlockBuffer(io.Buffer, c.blocksize, block, 1))
 					mblock = block
 				}
 
@@ -215,7 +209,7 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 }
 
 func (c *CacheMap) create_get_submsg(msg *message.Message,
-	offset, buffer_offset, blocknum uint64,
+	address uint64, logblock uint32,
 	buffer []byte) *message.Message {
 
 	m := message.NewMsgGet()
@@ -223,9 +217,9 @@ func (c *CacheMap) create_get_submsg(msg *message.Message,
 
 	// Set IoPkt
 	mio := m.IoPkt()
-	mio.Offset = offset
+	mio.Address = address
 	mio.Buffer = buffer
-	mio.BlockNum = blocknum
+	mio.LogBlock = logblock
 
 	return m
 }
@@ -245,7 +239,7 @@ func (c *CacheMap) invalidate(key uint64) bool {
 	return false
 }
 
-func (c *CacheMap) put(key uint64) (index uint64) {
+func (c *CacheMap) put(key uint64) (index uint32) {
 
 	var (
 		evictkey uint64
@@ -264,7 +258,7 @@ func (c *CacheMap) put(key uint64) (index uint64) {
 	return
 }
 
-func (c *CacheMap) get(key uint64) (index uint64, ok bool) {
+func (c *CacheMap) get(key uint64) (index uint32, ok bool) {
 
 	c.stats.read()
 
