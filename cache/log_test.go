@@ -75,7 +75,7 @@ func TestLogMultiBlock(t *testing.T) {
 	mock_byteswritten := 0
 	mock_written := 0
 	mock_off_written := int64(0)
-	continue_test := make(chan bool)
+	continue_test := make(chan bool, 1)
 	mockfile.MockWriteAt = func(p []byte, off int64) (n int, err error) {
 		mock_written++
 		mock_off_written = off
@@ -137,6 +137,7 @@ func TestLogMultiBlock(t *testing.T) {
 	tests.Assert(t, mock_written == 1)
 	tests.Assert(t, mock_off_written == 0)
 	tests.Assert(t, mock_read == 0)
+	tests.Assert(t, len(continue_test) == 0)
 
 	// At this point we have 4 blocks written to the log storage
 	// and 4 blocks in the current segment.
@@ -160,6 +161,7 @@ func TestLogMultiBlock(t *testing.T) {
 	tests.Assert(t, mock_read == 1)
 	tests.Assert(t, mock_bytesread == 4*4096)
 	tests.Assert(t, mock_off_read == 0)
+	tests.Assert(t, len(continue_test) == 0)
 
 	// Now read log blocks 1,2,3,4,5.  Blocks 1,2,3 will be on the storage
 	// device, and blocks 4,5 will be in ram
@@ -183,6 +185,7 @@ func TestLogMultiBlock(t *testing.T) {
 	tests.Assert(t, mock_read == 1)
 	tests.Assert(t, mock_bytesread == 3*4096)
 	tests.Assert(t, mock_off_read == 1*4096)
+	tests.Assert(t, len(continue_test) == 0)
 
 	// Cleanup
 	l.Close()
