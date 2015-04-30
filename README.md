@@ -2,6 +2,8 @@
 [![Coverage Status](https://coveralls.io/repos/pblcache/pblcache/badge.svg?branch=master)](https://coveralls.io/r/pblcache/pblcache?branch=master)
 [![Go Reference](https://godoc.org/github.com/pblcache/pblcache?status.png)](https://godoc.org/github.com/pblcache/pblcache)
 
+[![Join the chat at https://gitter.im/pblcache/pblcache](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/pblcache/pblcache?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 # pblcache
 
 Pblcache is an open source project to provide applications with a persistent, look-aside, block based cache.
