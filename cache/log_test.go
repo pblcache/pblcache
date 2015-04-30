@@ -63,8 +63,6 @@ func TestNewLog(t *testing.T) {
 
 func TestLogMultiBlock(t *testing.T) {
 
-	var lock sync.Mutex
-
 	// 256 blocks available in the log
 	seeklen := int64(256 * 4096)
 
@@ -77,13 +75,12 @@ func TestLogMultiBlock(t *testing.T) {
 	mock_byteswritten := 0
 	mock_written := 0
 	mock_off_written := int64(0)
+	continue_test := make(chan bool)
 	mockfile.MockWriteAt = func(p []byte, off int64) (n int, err error) {
-		lock.Lock()
-		defer lock.Unlock()
-
 		mock_written++
 		mock_off_written = off
 		mock_byteswritten += len(p)
+		continue_test <- true
 		return len(p), nil
 	}
 
@@ -91,12 +88,10 @@ func TestLogMultiBlock(t *testing.T) {
 	mock_read := 0
 	mock_off_read := int64(0)
 	mockfile.MockReadAt = func(p []byte, off int64) (n int, err error) {
-		lock.Lock()
-		defer lock.Unlock()
-
 		mock_read++
 		mock_off_read = off
 		mock_bytesread += len(p)
+		continue_test <- true
 		return len(p), nil
 	}
 
@@ -136,13 +131,12 @@ func TestLogMultiBlock(t *testing.T) {
 
 	m.Done()
 	<-here
+	<-continue_test
 
-	lock.Lock()
 	tests.Assert(t, mock_byteswritten == 4*4096)
 	tests.Assert(t, mock_written == 1)
 	tests.Assert(t, mock_off_written == 0)
 	tests.Assert(t, mock_read == 0)
-	lock.Unlock()
 
 	// At this point we have 4 blocks written to the log storage
 	// and 4 blocks in the current segment.
@@ -159,14 +153,13 @@ func TestLogMultiBlock(t *testing.T) {
 	mock_byteswritten = 0
 	l.Msgchan <- m
 	<-here
+	<-continue_test
 
-	lock.Lock()
 	tests.Assert(t, mock_byteswritten == 0)
 	tests.Assert(t, mock_written == 0)
 	tests.Assert(t, mock_read == 1)
 	tests.Assert(t, mock_bytesread == 4*4096)
 	tests.Assert(t, mock_off_read == 0)
-	lock.Unlock()
 
 	// Now read log blocks 1,2,3,4,5.  Blocks 1,2,3 will be on the storage
 	// device, and blocks 4,5 will be in ram
@@ -183,14 +176,13 @@ func TestLogMultiBlock(t *testing.T) {
 	mock_read = 0
 	l.Msgchan <- m
 	<-here
+	<-continue_test
 
-	lock.Lock()
 	tests.Assert(t, mock_byteswritten == 0)
 	tests.Assert(t, mock_written == 0)
 	tests.Assert(t, mock_read == 1)
 	tests.Assert(t, mock_bytesread == 3*4096)
 	tests.Assert(t, mock_off_read == 1*4096)
-	lock.Unlock()
 
 	// Cleanup
 	l.Close()
