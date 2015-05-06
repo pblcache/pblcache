@@ -24,50 +24,45 @@ import (
 
 func readandstore(fp io.ReaderAt,
 	c *cache.CacheMap,
-	devid uint16,
-	offset uint64,
-	nblocks uint64,
+	devid, offset, blocks uint32,
 	buffer []byte,
 	retchan chan *message.Message) {
 
-	fp.ReadAt(buffer, int64(offset))
+	fp.ReadAt(buffer, int64(offset)*4*KB)
 
 	m := message.NewMsgPut()
 	m.RetChan = retchan
 	io := m.IoPkt()
-	io.Address = cache.Address64(cache.Address{Devid: devid, Lba: offset})
+	io.Address = cache.Address64(cache.Address{Devid: devid, Block: offset})
 	io.Buffer = buffer
-	io.Blocks = uint32(nblocks)
+	io.Blocks = blocks
 
 	c.Put(m)
 }
 
 func read(fp io.ReaderAt,
 	c *cache.CacheMap,
-	devid uint16,
-	offset, blocksize_bytes uint64,
-	nblocks int,
+	devid, offset, blocks uint32,
 	buffer []byte) {
 
 	godbc.Require(len(buffer)%(4*KB) == 0)
-	godbc.Require(blocksize_bytes%(4*KB) == 0)
 
-	here := make(chan *message.Message, nblocks)
-	cacheoffset := cache.Address64(cache.Address{Devid: devid, Lba: offset})
+	here := make(chan *message.Message, blocks)
+	cacheoffset := cache.Address64(cache.Address{Devid: devid, Block: offset})
 	msg := message.NewMsgGet()
 	msg.RetChan = here
 	iopkt := msg.IoPkt()
 	iopkt.Buffer = buffer
 	iopkt.Address = cacheoffset
-	iopkt.Blocks = uint32(nblocks)
+	iopkt.Blocks = blocks
 
 	msgs := 0
 	hitpkt, err := c.Get(msg)
 	if err != nil {
-		//fmt.Printf("|nblocks:%d::hits:0--", nblocks)
+		//fmt.Printf("|blocks:%d::hits:0--", blocks)
 		// None found
 		// Read the whole thing from backend
-		fp.ReadAt(buffer, int64(offset))
+		fp.ReadAt(buffer, int64(offset)*4*KB)
 
 		m := message.NewMsgPut()
 		m.RetChan = here
@@ -75,48 +70,49 @@ func read(fp io.ReaderAt,
 		io := m.IoPkt()
 		io.Address = cacheoffset
 		io.Buffer = buffer
-		io.Blocks = uint32(nblocks)
+		io.Blocks = blocks
 		c.Put(m)
 		msgs++
 
-	} else if hitpkt.Hits != nblocks {
-		//fmt.Printf("|******nblocks:%d::hits:%d--", nblocks, hitpkt.Hits)
+	} else if hitpkt.Hits != blocks {
+		//fmt.Printf("|******blocks:%d::hits:%d--", blocks, hitpkt.Hits)
 		// Read from storage the ones that did not have
 		// in the hit map.
-		var be_offset, be_block, be_nblocks uint64
+		var be_offset, be_block, be_blocks uint32
 		var be_read_ready = false
-		for block := uint64(0); block < uint64(nblocks); block++ {
-			if !hitpkt.Hitmap[block] {
+		for block := uint32(0); block < blocks; block++ {
+			if !hitpkt.Hitmap[int(block)] {
 				if be_read_ready {
-					be_nblocks++
+					be_blocks++
 				} else {
 					be_read_ready = true
-					be_offset = offset + (block * blocksize_bytes)
+					be_offset = offset + block
 					be_block = block
-					be_nblocks++
+					be_blocks++
 				}
 			} else {
 				if be_read_ready {
 					// Send read
-					buffer_offset := be_block * blocksize_bytes
 					msgs++
-					go readandstore(fp, c, devid, be_offset, be_nblocks,
-						buffer[buffer_offset:(buffer_offset+blocksize_bytes)],
+					go readandstore(fp, c, devid,
+						be_offset,
+						be_blocks,
+						cache.SubBlockBuffer(buffer, 4*KB, be_block, be_blocks),
 						here)
 					be_read_ready = false
-					be_nblocks = 0
+					be_blocks = 0
 					be_offset = 0
 					be_block = 0
 				}
 			}
 		}
 		if be_read_ready {
-			buffer_offset := be_block * blocksize_bytes
 			msgs++
-			go readandstore(fp, c, devid, be_offset, be_nblocks,
-				buffer[buffer_offset:(buffer_offset+blocksize_bytes)],
+			go readandstore(fp, c, devid,
+				be_offset,
+				be_blocks,
+				cache.SubBlockBuffer(buffer, 4*KB, be_block, be_blocks),
 				here)
-
 		}
 
 	} else {
@@ -138,33 +134,28 @@ func read(fp io.ReaderAt,
 
 func write(fp io.WriterAt,
 	c *cache.CacheMap,
-	devid uint16,
-	offset, blocksize_bytes uint64,
-	nblocks int,
+	devid, offset, blocks uint32,
 	buffer []byte) {
 
-	godbc.Require(len(buffer)%(4*KB) == 0)
-	godbc.Require(blocksize_bytes%(4*KB) == 0)
-
-	here := make(chan *message.Message, nblocks)
-	cacheoffset := cache.Address64(cache.Address{Devid: devid, Lba: offset})
+	here := make(chan *message.Message, blocks)
+	cacheoffset := cache.Address64(cache.Address{Devid: devid, Block: offset})
 
 	// Send invalidates for each block
 	iopkt := &message.IoPkt{
 		Address: cacheoffset,
-		Blocks:  uint32(nblocks),
+		Blocks:  blocks,
 	}
 	c.Invalidate(iopkt)
 
 	// Write to storage back end
 	// :TODO: check return status
-	fp.WriteAt(buffer, int64(offset))
+	fp.WriteAt(buffer, int64(offset)*4*KB)
 
 	// Now write to cache
 	msg := message.NewMsgPut()
 	msg.RetChan = here
 	iopkt = msg.IoPkt()
-	iopkt.Blocks = uint32(nblocks)
+	iopkt.Blocks = blocks
 	iopkt.Address = cacheoffset
 	iopkt.Buffer = buffer
 	c.Put(msg)
