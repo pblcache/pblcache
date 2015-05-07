@@ -67,8 +67,8 @@ func init() {
 	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
 	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
 	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
-	flag.StringVar(&pbliodata, "data", "pblio.data", "\n\tStats file in CSV format")
-	flag.IntVar(&dataperiod, "dataperiod", 60, "\n\tNumber of seconds per data collected and saved in the csv file")
+	flag.StringVar(&pbliodata, "data", "pblio.data", "\n\tStats file in JSON format")
+	flag.IntVar(&dataperiod, "dataperiod", 60, "\n\tNumber of seconds per data collected and saved in the json file")
 }
 
 func main() {
