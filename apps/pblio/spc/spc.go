@@ -74,27 +74,25 @@ func (s *SpcInfo) sendio(wg *sync.WaitGroup,
 			if io.Isread {
 				if s.pblcache == nil {
 					s.asus[io.Asu-1].ReadAt(buffer[0:io.Blocks*4*KB],
-						int64(io.Offset)*int64(4*KB))
+						int64(io.Offset)*4*KB)
 				} else {
 					read(s.asus[io.Asu-1],
 						s.pblcache,
-						uint16(io.Asu),
-						uint64(io.Offset)*uint64(4*KB),
-						uint64(s.blocksize*KB),
-						int(io.Blocks),
+						io.Asu,
+						io.Offset,
+						io.Blocks,
 						buffer[0:io.Blocks*4*KB])
 				}
 			} else {
 				if s.pblcache == nil {
 					s.asus[io.Asu-1].WriteAt(buffer[0:io.Blocks*4*KB],
-						int64(io.Offset)*int64(4*KB))
+						int64(io.Offset)*4*KB)
 				} else {
 					write(s.asus[io.Asu-1],
 						s.pblcache,
-						uint16(io.Asu),
-						uint64(io.Offset)*uint64(4*KB),
-						uint64(s.blocksize*KB),
-						int(io.Blocks),
+						io.Asu,
+						io.Offset,
+						io.Blocks,
 						buffer[0:io.Blocks*4*KB])
 				}
 			}

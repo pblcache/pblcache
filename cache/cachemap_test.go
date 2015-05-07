@@ -154,7 +154,7 @@ func TestCacheMapSimple(t *testing.T) {
 	tests.Assert(t, err == nil)
 	tests.Assert(t, hitmap.Hits == 1)
 	tests.Assert(t, hitmap.Hitmap[0] == true)
-	tests.Assert(t, hitmap.Hits == int(io.Blocks))
+	tests.Assert(t, hitmap.Hits == io.Blocks)
 
 	logmsg = <-mocklog
 	logio = logmsg.IoPkt()

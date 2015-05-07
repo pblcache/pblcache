@@ -43,7 +43,7 @@ type CacheMap struct {
 
 type HitmapPkt struct {
 	Hitmap []bool
-	Hits   int
+	Hits   uint32
 }
 
 var (
@@ -97,7 +97,6 @@ func (c *CacheMap) Put(msg *message.Message) error {
 	defer c.lock.Unlock()
 
 	io := msg.IoPkt()
-
 	if io.Blocks > 1 {
 		// Have parent message wait for its children
 		defer msg.Done()
@@ -142,7 +141,7 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 
 	io := msg.IoPkt()
 	hitmap := make([]bool, io.Blocks)
-	hits := 0
+	hits := uint32(0)
 
 	// Create a message
 	var m *message.Message
@@ -174,8 +173,8 @@ func (c *CacheMap) Get(msg *message.Message) (*HitmapPkt, error) {
 				if m.IoPkt().LogBlock+numblocks == index && hitmap[block-1] == true {
 					// It is the next in both the cache and storage device
 					mio := m.IoPkt()
-					mio.Buffer = SubBlockBuffer(io.Buffer, c.blocksize, mblock, numblocks)
 					mio.Blocks++
+					mio.Buffer = SubBlockBuffer(io.Buffer, c.blocksize, mblock, mio.Blocks)
 				} else {
 					// Send the previous one
 					c.pipeline <- m
