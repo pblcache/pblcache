@@ -170,7 +170,12 @@ func (c *cachestats) copy() *cachestats {
 	defer c.lock.Unlock()
 
 	statscopy := &cachestats{}
-	*statscopy = *c
+	statscopy.readhits = c.readhits
+	statscopy.invalidatehits = c.invalidatehits
+	statscopy.reads = c.reads
+	statscopy.insertions = c.insertions
+	statscopy.evictions = c.evictions
+	statscopy.invalidations = c.invalidations
 
 	return statscopy
 }

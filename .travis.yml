@@ -1,5 +1,6 @@
 language: go
 install:
+- bash .travis-fork-fix
 - go get github.com/mattn/goveralls
 - go get github.com/lpabon/tm
 - go get -v -d ./...
@@ -8,18 +9,10 @@ env:
   - secure: XbgkCwQcPJzpkaVR9HJPyKezpEDrZQEHwhYueiWgsC7YKJIqROfHQ/EPZNQpXCW/v24Sp4RQeQf4RMcnnj5Dy7XBzbkBmMIjZs/Tvp8wTwFk0BqrD2oFm7Uc//iAIIgrUnOgJl/d+GcmZHyVOhHiAuNwJTIP4Cnmjk8DKL7DdU8=
 matrix:
   include:
-  - go: 1.2.2
-    env: OPTIONS="" GOVER="1.2"
-  - go: 1.3.3
-    env: OPTIONS="-race" GOVER="1.3"
-  - go: 1.4.2
-    env: COVERAGE="true" GOVER="1.4"
-before_script:
-- if [[ "$GOVER" = "1.4" ]] ; then go get golang.org/x/tools/cmd/vet; fi
-- if [[ "$GOVER" = "1.4" ]] ; then go get golang.org/x/tools/cmd/cover; fi
-- if [[ "$GOVER" != "1.4" ]] ; then go get code.google.com/p/go.tools/cmd/cover; fi
-- if [[ "$GOVER" != "1.4" ]] ; then go get code.google.com/p/go.tools/cmd/vet; fi
-- bash .travis-fork-fix
+  - go: 1.5.3
+    env: OPTIONS="-race"
+  - go: 1.6.1
+    env: COVERAGE="true" OPTIONS=""
 script:
 - go fmt ./... | wc -l | grep 0
 - go vet ./...

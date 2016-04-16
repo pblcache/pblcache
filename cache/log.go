@@ -149,9 +149,9 @@ func NewLog(logfile string,
 			log.blocks_per_segment, log.numsegments, log.size))
 
 	// Incoming message channel
-	log.Msgchan = make(chan *message.Message, 32)
+	log.Msgchan = make(chan *message.Message, 512)
 	log.quitchan = make(chan struct{})
-	log.logreaders = make(chan *message.Message, 32)
+	log.logreaders = make(chan *message.Message, 512)
 
 	// Segment channel state machine:
 	// 		-> Client writes available segment
