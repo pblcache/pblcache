@@ -112,7 +112,15 @@ type logstats struct {
 func (s *logstats) Stats() *LogStats {
 	scopy := &logstats{}
 	s.lock.Lock()
-	*scopy = *s
+	scopy.ramhits = s.ramhits
+	scopy.storagehits = s.storagehits
+	scopy.wraps = s.wraps
+	scopy.seg_skipped = s.seg_skipped
+	scopy.bufferhits = s.bufferhits
+	scopy.totalhits = s.totalhits
+	scopy.readtime = s.readtime
+	scopy.segmentreadtime = s.segmentreadtime
+	scopy.writetime = s.writetime
 	s.lock.Unlock()
 
 	return &LogStats{
