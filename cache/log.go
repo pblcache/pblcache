@@ -41,7 +41,7 @@ const (
 	MB                   = 1024 * KB
 	GB                   = 1024 * MB
 	TB                   = 1024 * GB
-	NumberSegmentBuffers = 32
+	NumberSegmentBuffers = 512
 )
 
 // Allows these functions to be mocked by tests
@@ -149,9 +149,9 @@ func NewLog(logfile string,
 			log.blocks_per_segment, log.numsegments, log.size))
 
 	// Incoming message channel
-	log.Msgchan = make(chan *message.Message, 32)
+	log.Msgchan = make(chan *message.Message, 512)
 	log.quitchan = make(chan struct{})
-	log.logreaders = make(chan *message.Message, 32)
+	log.logreaders = make(chan *message.Message, 512)
 
 	// Segment channel state machine:
 	// 		-> Client writes available segment

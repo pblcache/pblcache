@@ -56,8 +56,14 @@ data_sources = ['DS:tlat_d:COUNTER:600:0:U',
                 'DS:total:COUNTER:600:0:U',
                 'DS:asu1_rl_d:COUNTER:600:0:U',
                 'DS:asu1_rl_c:COUNTER:600:0:U',
+                'DS:asu1_wl_d:COUNTER:600:0:U',
+                'DS:asu1_wl_c:COUNTER:600:0:U',
                 'DS:asu2_rl_d:COUNTER:600:0:U',
                 'DS:asu2_rl_c:COUNTER:600:0:U',
+                'DS:asu2_wl_d:COUNTER:600:0:U',
+                'DS:asu2_wl_c:COUNTER:600:0:U',
+                'DS:asu3_wl_d:COUNTER:600:0:U',
+                'DS:asu3_wl_c:COUNTER:600:0:U',
                 ]
 
 # Create db
@@ -96,6 +102,15 @@ for line in fp.readlines():
     asu2_rl_d = int(stat['spc']['asu'][1]['read']['latency']['duration']/1000)
     asu2_rl_c = stat['spc']['asu'][1]['read']['latency']['count']
 
+    asu1_wl_d = int(stat['spc']['asu'][0]['write']['latency']['duration']/1000)
+    asu1_wl_c = stat['spc']['asu'][0]['write']['latency']['count']
+
+    asu2_wl_d = int(stat['spc']['asu'][1]['write']['latency']['duration']/1000)
+    asu2_wl_c = stat['spc']['asu'][1]['write']['latency']['count']
+
+    asu3_wl_d = int(stat['spc']['asu'][2]['write']['latency']['duration']/1000)
+    asu3_wl_c = stat['spc']['asu'][2]['write']['latency']['count']
+
     # Get cache
     try:
         cache_hits = stat['cache']['readhits']
@@ -131,8 +146,14 @@ for line in fp.readlines():
         ("%d:" % total)+
         ("%d:" % asu1_rl_d)+
         ("%d:" % asu1_rl_c)+
+        ("%d:" % asu1_wl_d)+
+        ("%d:" % asu1_wl_c)+
         ("%d:" % asu2_rl_d)+
-        ("%d" % asu2_rl_c))
+        ("%d:" % asu2_rl_c)+
+        ("%d:" % asu2_wl_d)+
+        ("%d:" % asu2_wl_c)+
+        ("%d:" % asu3_wl_d)+
+        ("%d" % asu3_wl_c))
 
     # Save the end time for graphs
     end_time = stat['time']
@@ -161,21 +182,66 @@ rrdtool.graph('tlat.png',
     'LINE2:writelatms#0000FF:Write Total Latency')
 
 # Graph ASU1 and ASU2 Read Latency
-rrdtool.graph('asu_read_latency.png',
+rrdtool.graph('asu1_read_latency.png',
+    '--start', '%d' % start_time,
+    '--end', '%d' % end_time,
+    '-w 800',
+    '-h 400',
+    '--title=ASU1 Read Latency',
+    '--vertical-label=Time (ms)',
+    'DEF:asu1d=pblio.rrd:asu1_rl_d:LAST',
+    'DEF:asu1c=pblio.rrd:asu1_rl_c:LAST',
+    'CDEF:asu1l=asu1d,asu1c,/,1000,/',
+    'LINE2:asu1l#FF0000:ASU1 Read Latency')
+
+rrdtool.graph('asu2_read_latency.png',
     '--start', '%d' % start_time,
     '--end', '%d' % end_time,
     '-w 800',
     '-h 400',
     '--title=ASU Read Latency',
     '--vertical-label=Time (ms)',
-    'DEF:asu1d=pblio.rrd:asu1_rl_d:LAST',
-    'DEF:asu1c=pblio.rrd:asu1_rl_c:LAST',
     'DEF:asu2d=pblio.rrd:asu2_rl_d:LAST',
     'DEF:asu2c=pblio.rrd:asu2_rl_c:LAST',
-    'CDEF:asu1l=asu1d,asu1c,/,1000,/',
     'CDEF:asu2l=asu2d,asu2c,/,1000,/',
-    'LINE2:asu1l#FF0000:ASU1 Read Latency',
     'LINE2:asu2l#00FF00:ASU2 Read Latency')
+
+# Graph ASU1 and ASU2 Read Latency
+rrdtool.graph('asu1_write_latency.png',
+    '--start', '%d' % start_time,
+    '--end', '%d' % end_time,
+    '-w 800',
+    '-h 400',
+    '--title=ASU1 Write Latency',
+    '--vertical-label=Time (ms)',
+    'DEF:asu1d=pblio.rrd:asu1_wl_d:LAST',
+    'DEF:asu1c=pblio.rrd:asu1_wl_c:LAST',
+    'CDEF:asu1l=asu1d,asu1c,/,1000,/',
+    'LINE2:asu1l#FF0000:ASU1 Write Latency')
+
+rrdtool.graph('asu2_write_latency.png',
+    '--start', '%d' % start_time,
+    '--end', '%d' % end_time,
+    '-w 800',
+    '-h 400',
+    '--title=ASU2 Write Latency',
+    '--vertical-label=Time (ms)',
+    'DEF:asu2d=pblio.rrd:asu2_wl_d:LAST',
+    'DEF:asu2c=pblio.rrd:asu2_wl_c:LAST',
+    'CDEF:asu2l=asu2d,asu2c,/,1000,/',
+    'LINE2:asu2l#00FF00:ASU2 Write Latency')
+
+rrdtool.graph('asu3_write_latency.png',
+    '--start', '%d' % start_time,
+    '--end', '%d' % end_time,
+    '-w 800',
+    '-h 400',
+    '--title=ASU3 Write Latency',
+    '--vertical-label=Time (ms)',
+    'DEF:asu3d=pblio.rrd:asu3_wl_d:LAST',
+    'DEF:asu3c=pblio.rrd:asu3_wl_c:LAST',
+    'CDEF:asu3l=asu3d,asu3c,/,1000,/',
+    'LINE2:asu3l#0000FF:ASU3 Write Latency')
 
 # Graph Read Hit Rate
 rrdtool.graph('readhit.png',

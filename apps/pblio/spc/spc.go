@@ -38,7 +38,7 @@ type SpcInfo struct {
 }
 
 func NewSpcInfo(c *cache.CacheMap,
-	usedirectio bool,
+	usedirectio, mock_reads, mock_writes bool,
 	blocksize int) *SpcInfo {
 
 	s := &SpcInfo{
@@ -47,9 +47,9 @@ func NewSpcInfo(c *cache.CacheMap,
 		blocksize: blocksize,
 	}
 
-	s.asus[ASU1] = NewAsu(usedirectio)
-	s.asus[ASU2] = NewAsu(usedirectio)
-	s.asus[ASU3] = NewAsu(usedirectio)
+	s.asus[ASU1] = NewAsu(usedirectio, mock_reads, mock_writes)
+	s.asus[ASU2] = NewAsu(usedirectio, mock_reads, mock_writes)
+	s.asus[ASU3] = NewAsu(usedirectio, mock_reads, mock_writes)
 
 	return s
 }

@@ -25,13 +25,17 @@ import (
 
 func TestAsuNew(t *testing.T) {
 	usedirectio := false
-	asu := NewAsu(usedirectio)
+	mock_reads := false
+	mock_writes := true
+	asu := NewAsu(usedirectio, mock_reads, mock_writes)
 	tests.Assert(t, asu.usedirectio == usedirectio)
+	tests.Assert(t, asu.mock_reads == mock_reads)
+	tests.Assert(t, asu.mock_writes == mock_writes)
 	tests.Assert(t, len(asu.fps) == 0)
 	tests.Assert(t, asu.len == 0)
 
 	usedirectio = true
-	asu = NewAsu(usedirectio)
+	asu = NewAsu(usedirectio, false, false)
 	tests.Assert(t, asu.usedirectio == usedirectio)
 	tests.Assert(t, len(asu.fps) == 0)
 	tests.Assert(t, asu.len == 0)
@@ -40,7 +44,7 @@ func TestAsuNew(t *testing.T) {
 func TestAsuSize(t *testing.T) {
 
 	usedirectio := false
-	asu := NewAsu(usedirectio)
+	asu := NewAsu(usedirectio, false, false)
 
 	// set fake length
 	asu.len = 1234 * GB / (4 * KB)
@@ -49,7 +53,7 @@ func TestAsuSize(t *testing.T) {
 
 func TestAsuOpenFile(t *testing.T) {
 	usedirectio := true
-	asu := NewAsu(usedirectio)
+	asu := NewAsu(usedirectio, false, false)
 	mockfile := tests.NewMockFile()
 	mockerror := errors.New("Test Error")
 
@@ -75,7 +79,7 @@ func TestAsuOpenFile(t *testing.T) {
 
 	// Now try without directio set
 	usedirectio = false
-	asu = NewAsu(usedirectio)
+	asu = NewAsu(usedirectio, false, false)
 
 	// Check results
 	err = asu.Open("filename")
@@ -85,7 +89,7 @@ func TestAsuOpenFile(t *testing.T) {
 
 func TestAsuOpenSeek(t *testing.T) {
 	usedirectio := true
-	asu := NewAsu(usedirectio)
+	asu := NewAsu(usedirectio, false, false)
 	mockfile := tests.NewMockFile()
 
 	seeklen := int64(0)
@@ -145,7 +149,7 @@ func TestAsuOpenSeek(t *testing.T) {
 func TestAsuIoAt(t *testing.T) {
 
 	usedirectio := true
-	asu := NewAsu(usedirectio)
+	asu := NewAsu(usedirectio, false, false)
 
 	// Setup Head - 10 4k blocks
 	head := tests.NewMockFile()

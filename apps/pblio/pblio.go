@@ -25,6 +25,7 @@ import (
 	"github.com/pblcache/pblcache/cache"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/pprof"
 	"strings"
 	"sync"
@@ -46,6 +47,7 @@ const (
 )
 
 var (
+	PBLIO_VERSION            = "(dev)"
 	asu1, asu2, asu3         string
 	cachefilename, pbliodata string
 	runlen                   int
@@ -53,27 +55,42 @@ var (
 	bsu, dataperiod          int
 	usedirectio, cpuprofile  bool
 	cachesavefile            string
+	showVersion              bool
+	mock_reads, mock_writes  bool
 )
 
 func init() {
-	flag.StringVar(&asu1, "asu1", "", "\n\tASU1 - Data Store")
-	flag.StringVar(&asu2, "asu2", "", "\n\tASU2 - User Store")
-	flag.StringVar(&asu3, "asu3", "", "\n\tLog")
-	flag.StringVar(&cachefilename, "cache", "", "\n\tCache file name")
-	flag.StringVar(&cachesavefile, "cachemeta", "cache.pbl", "\n\tPersistent cache metadata location")
-	flag.IntVar(&bsu, "bsu", 50, "\n\tNumber of BSUs (Business Scaling Units)."+
+	flag.StringVar(&asu1, "asu1", "", "ASU1 - Data Store")
+	flag.StringVar(&asu2, "asu2", "", "ASU2 - User Store")
+	flag.StringVar(&asu3, "asu3", "", "Log")
+	flag.StringVar(&cachefilename, "cache", "", "Cache file name")
+	flag.StringVar(&cachesavefile, "cachemeta", "cache.pbl", "Persistent cache metadata location")
+	flag.IntVar(&bsu, "bsu", 50, "Number of BSUs (Business Scaling Units)."+
 		"\n\tEach BSU requires 50 IOPs from the back end storage")
-	flag.IntVar(&runlen, "runlen", 300, "\n\tBenchmark run time length in seconds")
-	flag.IntVar(&blocksize, "blocksize", 4, "\n\tCache block size in KB")
-	flag.BoolVar(&usedirectio, "directio", true, "\n\tUse O_DIRECT on ASU files")
-	flag.BoolVar(&cpuprofile, "cpuprofile", false, "\n\tCreate a Go cpu profile for analysis")
-	flag.StringVar(&pbliodata, "data", "pblio.data", "\n\tStats file in JSON format")
-	flag.IntVar(&dataperiod, "dataperiod", 60, "\n\tNumber of seconds per data collected and saved in the json file")
+	flag.IntVar(&runlen, "runlen", 300, "Benchmark run time length in seconds")
+	flag.IntVar(&blocksize, "blocksize", 4, "Cache block size in KB")
+	flag.BoolVar(&usedirectio, "directio", true, "Use O_DIRECT on ASU files")
+	flag.BoolVar(&cpuprofile, "cpuprofile", false, "Create a Go cpu profile for analysis")
+	flag.StringVar(&pbliodata, "data", "pblio.data", "Stats file in JSON format")
+	flag.IntVar(&dataperiod, "dataperiod", 60, "Number of seconds per data collected and saved in the json file")
+	flag.BoolVar(&showVersion, "version", false, "Version")
+	flag.BoolVar(&mock_reads, "mock_reads", false, "Mock reads to storage backend")
+	flag.BoolVar(&mock_writes, "mock_writes", false, "Mock writes to storage backend")
+}
+
+func printVersion() {
+	fmt.Printf("pblio %v\n", PBLIO_VERSION)
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	// Gather command line arguments
 	flag.Parse()
+
+	printVersion()
+	if showVersion {
+		return
+	}
 
 	// According to spc.h, this needs to be set to
 	// contexts = (b+99)/100 for SPC workload generator
@@ -142,13 +159,13 @@ func main() {
 		fmt.Printf("Cache   : %s (%s)\n"+
 			"C Size  : %.2f GB\n",
 			cachefilename, cache_state,
-			float64(logblocks*blocksize_bytes)/GB)
+			float64(logblocks)/GB*float64(blocksize_bytes))
 	} else {
 		fmt.Println("Cache   : None")
 	}
 
 	// Initialize spc1info
-	spcinfo := spc.NewSpcInfo(c, usedirectio, blocksize)
+	spcinfo := spc.NewSpcInfo(c, usedirectio, mock_reads, mock_writes, blocksize)
 
 	// Open asus
 	for _, v := range strings.Split(asu1, ",") {
@@ -190,7 +207,7 @@ func main() {
 
 	// This channel will be used for the io to return
 	// the latency
-	iotime := make(chan *spc.IoStats, 1024)
+	iotime := make(chan *spc.IoStats, 2048)
 
 	// Before starting, let's print out the sizes
 	// and test information

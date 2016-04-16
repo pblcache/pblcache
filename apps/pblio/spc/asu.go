@@ -22,6 +22,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 )
 
 // Allows these functions to be mocked by tests
@@ -49,11 +50,15 @@ type Asu struct {
 	len         uint32
 	usedirectio bool
 	fpsize      int64
+	mock_reads  bool
+	mock_writes bool
 }
 
-func NewAsu(usedirectio bool) *Asu {
+func NewAsu(usedirectio, mock_reads, mock_writes bool) *Asu {
 	return &Asu{
 		usedirectio: usedirectio,
+		mock_reads:  mock_reads,
+		mock_writes: mock_writes,
 		fps:         make([]Filer, 0),
 	}
 }
@@ -115,7 +120,7 @@ func (a *Asu) ioAt(b []byte, offset int64, isread bool) (n int, err error) {
 	godbc.Check(head_fp < len(a.fps), head_fp, len(a.fps))
 
 	// Tail
-	tail_fp := int((offset + int64(len(b))) / (a.fpsize + 4*KB))
+	tail_fp := int((offset + int64(len(b)) - 1) / a.fpsize)
 	godbc.Check(tail_fp < len(a.fps), tail_fp, len(a.fps), offset, len(b), a.fpsize)
 
 	if head_fp == tail_fp {
@@ -135,6 +140,10 @@ func (a *Asu) ioAt(b []byte, offset int64, isread bool) (n int, err error) {
 		// Read head
 		go func() {
 			defer wg.Done()
+
+			godbc.Check(len(a.fps) > head_fp, len(a.fps), head_fp)
+			godbc.Check(int64(len(b)) > a.fpsize-head_fp_off, len(b), a.fpsize, head_fp_off)
+
 			if isread {
 				head_n, head_err = a.fps[head_fp].ReadAt(b[:a.fpsize-head_fp_off], head_fp_off)
 			} else {
@@ -145,6 +154,10 @@ func (a *Asu) ioAt(b []byte, offset int64, isread bool) (n int, err error) {
 		// Read tail
 		go func() {
 			defer wg.Done()
+
+			godbc.Check(len(a.fps) > tail_fp, len(a.fps), tail_fp)
+			godbc.Check(int64(len(b)) > a.fpsize-head_fp_off, len(b), a.fpsize, head_fp_off)
+
 			if isread {
 				tail_n, tail_err = a.fps[tail_fp].ReadAt(b[a.fpsize-head_fp_off:], 0)
 			} else {
@@ -165,11 +178,21 @@ func (a *Asu) ioAt(b []byte, offset int64, isread bool) (n int, err error) {
 }
 
 func (a *Asu) ReadAt(b []byte, offset int64) (n int, err error) {
-	return a.ioAt(b, offset, true)
+	if !a.mock_writes {
+		return a.ioAt(b, offset, true)
+	} else {
+		time.Sleep(time.Millisecond)
+		return len(b), nil
+	}
 }
 
 func (a *Asu) WriteAt(b []byte, offset int64) (n int, err error) {
-	return a.ioAt(b, offset, false)
+	if !a.mock_writes {
+		return a.ioAt(b, offset, false)
+	} else {
+		time.Sleep(time.Millisecond)
+		return len(b), nil
+	}
 }
 
 func (a *Asu) Close() {

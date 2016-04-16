@@ -30,9 +30,11 @@ func TestNewSpcInfo(t *testing.T) {
 	var cache *cache.CacheMap
 
 	usedirectio := false
+	mock_reads := false
+	mock_writes := true
 	blocksize := 4 * KB
 
-	s := NewSpcInfo(cache, usedirectio, blocksize)
+	s := NewSpcInfo(cache, usedirectio, mock_reads, mock_writes, blocksize)
 	tests.Assert(t, s.pblcache == cache)
 	tests.Assert(t, s.blocksize == blocksize)
 	tests.Assert(t, len(s.asus) == 3)
@@ -42,6 +44,14 @@ func TestNewSpcInfo(t *testing.T) {
 	tests.Assert(t, usedirectio == s.asus[ASU1].usedirectio)
 	tests.Assert(t, usedirectio == s.asus[ASU2].usedirectio)
 	tests.Assert(t, usedirectio == s.asus[ASU3].usedirectio)
+
+	tests.Assert(t, mock_reads == s.asus[ASU1].mock_reads)
+	tests.Assert(t, mock_reads == s.asus[ASU2].mock_reads)
+	tests.Assert(t, mock_reads == s.asus[ASU3].mock_reads)
+
+	tests.Assert(t, mock_writes == s.asus[ASU1].mock_writes)
+	tests.Assert(t, mock_writes == s.asus[ASU2].mock_writes)
+	tests.Assert(t, mock_writes == s.asus[ASU3].mock_writes)
 }
 
 func TestSpcOpen(t *testing.T) {
@@ -50,7 +60,7 @@ func TestSpcOpen(t *testing.T) {
 	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
-	s := NewSpcInfo(cache, usedirectio, blocksize)
+	s := NewSpcInfo(cache, usedirectio, false, false, blocksize)
 
 	// Get a test file
 	tmpfile := tests.Tempfile()
@@ -75,7 +85,7 @@ func TestSpcAdjustAsuSizes(t *testing.T) {
 	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
-	s := NewSpcInfo(cache, usedirectio, blocksize)
+	s := NewSpcInfo(cache, usedirectio, false, false, blocksize)
 
 	// Setup some fake data
 	s.asus[ASU1].len = 100
@@ -122,7 +132,7 @@ func TestSpcSize(t *testing.T) {
 	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
-	s := NewSpcInfo(cache, usedirectio, blocksize)
+	s := NewSpcInfo(cache, usedirectio, false, false, blocksize)
 
 	// Set fake len
 	s.asus[ASU1].len = 40 * GB / (4 * KB)
@@ -139,7 +149,7 @@ func TestSpc1Init(t *testing.T) {
 	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
-	s := NewSpcInfo(cache, usedirectio, blocksize)
+	s := NewSpcInfo(cache, usedirectio, false, false, blocksize)
 
 	// Set fake len
 	s.asus[ASU1].len = 5500
@@ -182,7 +192,7 @@ func TestSpcContext(t *testing.T) {
 	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
-	s := NewSpcInfo(cache, usedirectio, blocksize)
+	s := NewSpcInfo(cache, usedirectio, false, false, blocksize)
 
 	// Setup Mockfile
 	mockfile := tests.NewMockFile()
@@ -267,7 +277,7 @@ func TestSpcContextQuit(t *testing.T) {
 	var cache *cache.CacheMap
 	usedirectio := false
 	blocksize := 4 * KB
-	s := NewSpcInfo(cache, usedirectio, blocksize)
+	s := NewSpcInfo(cache, usedirectio, false, false, blocksize)
 
 	// Setup Mockfile
 	mockfile := tests.NewMockFile()
