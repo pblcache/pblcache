@@ -22,7 +22,6 @@ import (
 	"io"
 	"os"
 	"sync"
-	"time"
 )
 
 // Allows these functions to be mocked by tests
@@ -178,10 +177,9 @@ func (a *Asu) ioAt(b []byte, offset int64, isread bool) (n int, err error) {
 }
 
 func (a *Asu) ReadAt(b []byte, offset int64) (n int, err error) {
-	if !a.mock_writes {
+	if !a.mock_reads {
 		return a.ioAt(b, offset, true)
 	} else {
-		time.Sleep(time.Millisecond)
 		return len(b), nil
 	}
 }
@@ -190,7 +188,6 @@ func (a *Asu) WriteAt(b []byte, offset int64) (n int, err error) {
 	if !a.mock_writes {
 		return a.ioAt(b, offset, false)
 	} else {
-		time.Sleep(time.Millisecond)
 		return len(b), nil
 	}
 }
